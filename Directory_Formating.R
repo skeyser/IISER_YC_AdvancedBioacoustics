@@ -19,3 +19,16 @@ for(i in 1:length(paths)){
     }
   }
 }
+
+## Now we need to add some "dummy" text files in each subdir so we can add these to github for
+## the team to see the structure.
+
+mod.paths <- list.dirs("./Modules/")
+target_paths <- mod.paths[grep("(Code|Data|Presentations)$", mod.paths)]
+
+# Create .gitkeep files in those directories
+for(path in target_paths) {
+  file.create(file.path(path, "dummy.txt"))
+  sometext <- "Dummy file. Delete when ready."
+  writeLines(sometext, file.path(path, "dummy.txt"))
+}
