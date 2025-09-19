@@ -1,0 +1,216 @@
+---
+title: "IISER Advanced Bioacoustics Workshop - Occupancy Simulation"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+#Load packages
+
+```{r }
+library(unmarked) #for occupancy modeling
+library(ggplot2) #for plotting
+
+```
+
+## Manually simulate occupancy data
+
+First we will manually simulate true occupancy and detection matrices by providing the following parameters:
+
+$\psi$ - mean occupancy probability across sites
+$p$ - detection probability (assumed constant across all sites and visits; this could be relaxed)
+
+```{r manual simulation}
+set.seed(123) #to ensure we all get the same values from simulation
+
+#Manually simulate occupancy data
+M <- 100 # Number of sites
+psi <- 0.5 # True occupancy probability 
+occupancy_status <- rbinom(M, 1, psi) # Simulate true site occupancy status
+
+J <- 3 # Number of surveys per site
+p <- 0.5 # True detection probability
+
+#Create matrix for detection history
+detection_history <- matrix(NA, nrow = M, ncol = J)
+
+#Simulate detection (observation) matrix based on detection probability and number of surveys per site
+for (i in 1:M) {
+  if (occupancy_status[i] == 1) {
+    detection_history[i, ] <- rbinom(J, 1, p)
+  } else {
+    detection_history[i, ] <- 0 #If the site is not occupied no detections occur
+  }
+}
+
+  # Create unmarkedFrame
+  umf1 <- unmarkedFrameOccu(y = detection_history)
+  mod1 <- occu(~1~1, umf1)
+  # check that occupancy and detection matches our inputs
+  plogis(coef(mod1))
+
+```
+
+
+## Simulate occupancy with a single covariate (e.g., elevation)
+
+Next we will build on the above simulation and allow occupancy to vary by differences in elevation by site. 
+
+```{r manual simulation with cov}
+set.seed(123)
+
+#Manually simulate occupancy data
+M <- 100 # Number of sites
+
+#Add a site-level covariate for occupancy
+elev <- rnorm(M, 0) #Simulate values for elevation
+psi <- qlogis(0.5) #Assign mean psi on probability scale and change it logit scale
+beta_psi <- c(psi, -1) # Assign intercept and slope for occupancy (this indicates a negative relationship between occupancy and elevation)
+logit_psi <- beta_psi[1] + beta_psi[2] * elev #Calculate occupancy with elevation at each site
+psi_variable <- plogis(logit_psi) # Transform site occupancy to probability 
+occupancy_status_cov <- rbinom(M, 1, psi_variable) #Simulate true site occupancy status
+
+J <- 3 # Number of surveys per site
+p <- 0.5 # True detection probability
+
+#Create matrix for detection history
+detection_history <- matrix(NA, nrow = M, ncol = J)
+
+#Simulate detection matrix based on detection probability and number of surveys per site
+for (i in 1:M) {
+  if (occupancy_status_cov[i] == 1) {
+    detection_history[i, ] <- rbinom(J, 1, p)
+  } else {
+    detection_history[i, ] <- 0 #If the site is not occupied no detections occur
+  }
+}
+
+  # Create unmarkedFrame
+  umf2 <- unmarkedFrameOccu(y = detection_history, data.frame(elev = elev))
+  mod2 <- occu(~1~elev, umf2)
+  # Check that occupancy and detection matches how we would expect
+  plogis(coef(mod2))
+
+```
+
+## Simulate occupancy using simulate() in the package 'unmarked'
+
+Alternatively, you can simulate occupancy in the package 'unmarked'. 
+
+```{r manual simulation with unmarked}
+set.seed(123)
+
+  #See ??unmarked::simulate for more information
+
+  # First create an unmarkedFrame with the correct design
+  
+  M <- 100 # number of sites
+  J <- 3   # number of occasions
+  
+  # Create a detection matrix (often specified as 'y'); also called the 'observation' matrix
+  y <- matrix(NA, M, J)
+  
+  # Simulate site elevation covariate
+  elev <- rnorm(M, 0)
+  
+  # Create unmarkedFrame
+  umf <- unmarkedFrameOccu(y = y, siteCovs = data.frame(elev = elev))
+  
+  # the formula species the specific model structure we want to simulate
+  form <- ~1 ~elev
+  # Here we imply a mean occupancy and mean detection of 0.5
+  # (corresponding to values of 0 on the inverse link scale) and a negative effect of increasing elevation
+  plogis(-1)
+  cf <- list(state = c(0,-1), det = 0)
+  # Run simulation; Must specify model = occu 
+  s <- simulate(umf, model = occu, formula = form, coefs = cf)
+  
+  head(s[[1]])
+  
+  mod3 <- occu(~1~elev, s[[1]])
+  mod3
+  
+  #check that occupancy and detection matches how we would expect
+  plogis(coef(mod3))
+  
+```
+## Plot results
+
+We will not plot our raw data and predictions for occupancy as function of elevation. After running this, return to the above code chunk and manipulate, M, J, $\psi$, $p$, and the elevation coefficient to examine how that influences your output. 
+
+```{r plotting}
+set.seed(123)
+
+#create data for predictions
+newdata <- as.data.frame(elev)
+#predict onto new data
+pred <- predict(mod2, newdata = newdata, type = "state", appendData = TRUE)
+head(pred)
+
+#plot results
+ggplot(data = pred) +
+  geom_line(aes(x = elev, y = Predicted))  + 
+  geom_ribbon(aes(x = elev, ymin = lower, ymax = upper), alpha = 0.1) +
+  theme_minimal()
+  
+```
+
+
+## Explore varying parameter values and the outcome on occupancy and uncertainity
+
+Manipulate, M, J, $\psi$, $p$, and the elevation coefficient to examine how that influences your output. See "#CHANGE ME" for places to modify. 
+
+```{r exploration}
+set.seed(123)
+
+#Manually simulate occupancy data
+M <- 100 # Number of sites #CHANGE ME
+J <- 3 # Number of surveys per site #CHANGE ME
+p <- 0.5 # True detection probability #CHANGE ME
+psi <- qlogis(0.5) #Assign psi on probability scale and then change it to logit scale #CHANGE ME
+
+
+#Add a site-level covariate for occupancy
+beta_psi <- c(psi, -1) # Assign intercept and slope for occupancy
+elev <- rnorm(M, 0) #simulate values for elevation
+logit_psi <- beta_psi[1] + beta_psi[2] * elev # Calculate occupancy by site
+psi_variable <- plogis(logit_psi) # Transform occupancy to probability 
+occupancy_status_cov <- rbinom(M, 1, psi_variable) # Simulate true site occupancy status
+
+#Create matrix for detection history
+detection_history <- matrix(NA, nrow = M, ncol = J)
+
+#Simulate detection matrix based on detection probability and number of surveys per site
+for (i in 1:M) {
+  if (occupancy_status_cov[i] == 1) {
+    detection_history[i, ] <- rbinom(J, 1, p)
+  } else {
+    detection_history[i, ] <- 0 #If the site is not occupied no detections occur
+  }
+}
+
+  # Create unmarkedFrame
+  umf.exp <- unmarkedFrameOccu(y = detection_history, data.frame(elev = elev))
+  mod.exp <- occu(~1 ~elev, umf.exp)
+  # Check that occupancy and detection matches how we would expect
+  plogis(coef(mod.exp))
+  newdata <- as.data.frame(elev)
+
+pred.exp <- predict(mod.exp, newdata = newdata, type = "state", appendData = TRUE)
+head(pred.exp)
+
+ggplot(data = pred.exp) +
+  #add lines for the new outputs
+  geom_line(aes(x = elev, y = Predicted), col = "blue")  + 
+  geom_ribbon(aes(x = elev, ymin = lower, ymax = upper), fill = "blue", alpha = 0.1) +
+  #add lines for the original output with p = 0.5, psi = 0.5
+  geom_line(aes(x = pred$elev, y = pred$Predicted))  + 
+  geom_ribbon(aes(x = pred$elev, ymin = pred$lower, ymax = pred$upper), alpha = 0.1) +
+  theme_minimal()
+  
+```
