@@ -9,7 +9,7 @@ Repository for the IISER-Yang Center Advanced Bioacoustics workshop in Tirupati,
 - [Rebecca Cohen, Ph.D.](https://www.birds.cornell.edu/ccb/rebecca-cohen-ph-d/)
 - [Irina Tolkova, Ph.D.](https://www.birds.cornell.edu/ccb/irina-tolkova-ph-d/)
 - [Spencer Keyser, Ph.D.](https://www.birds.cornell.edu/ccb/spencer-r-keyser-ph-d/)
-- Meghan Beatty, Ph.D.
+- [Meghan A. Beatty, Ph.D.](https://www.birds.cornell.edu/ccb/meghan-a-beatty-ph-d/)
 
 ### IISER
 
