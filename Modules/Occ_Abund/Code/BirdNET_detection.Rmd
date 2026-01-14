@@ -1,0 +1,178 @@
+---
+title: "BirdNET_detection"
+output: html_document
+date: "2026-01-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## This code has been modified from supplementary material in:
+
+Wood, C.M., Kahl, S. Guidelines for appropriate use of BirdNET scores and other detector outputs. J Ornithol 165, 777–782 (2024). <https://doi.org/10.1007/s10336-024-02144-5>
+
+## 1) Manually validate BirdNET predictions
+
+Randomly select samples from the BirdNET output to manually validate as to whether it correctly identified the species. For example, you may generate 100 samples from confidence scores ranging 0.1 to 1.0 and 100 samples from confidence scores 0.95 to 1.0, as we have done here. More or less may be needed to encompass the full variation in any given dataset. You could also set a lower bound that 0.95.
+
+## 2) Run the validation results into R
+
+Column descriptions:
+
+**full_id** = the audio clip
+
+**confidence** = a unitless, numeric expression of BirdNET’s “confidence” in its prediction, scaled to the range [0–1]
+
+**correct** = whether the audio clip was correct n identifying the species (1) or was incorrect (0), by manual validation
+
+```{r data}
+#read data
+data = read.csv('phai_validation.csv') 
+#transform confidence scores to logit scale
+data$logit=log(data$confidence/(1-data$confidence))
+
+```
+
+## 2) Fit logistic regression models
+
+We will fit three logistic regression models to the data, a null model which assumes no relationship between BirdNET score and prediction outcome, one relating confidence score to prediction outcome, one relating the original logit score to prediction outcome. Then we’ll see which model has the most support from the data, as evidenced by a lower AIC score.
+
+```{r models}
+  
+  #fit models
+  null.model=glm(correct~1, data, family = 'binomial')
+  conf.model=glm(correct~confidence, data, family = 'binomial')
+  logit.model=glm(correct~logit, data, family = 'binomial')
+  
+  #create AIC table
+  aic.table = AIC(null.model, conf.model, logit.model)
+  aic.table[order(aic.table$AIC, decreasing=F), ]
+
+```
+
+## 3) Plot the results
+
+It can be helpful to visualize the logistic curve and the results. We can solve the logistic equation for the desired probability thresholds and plot them as vertical lines on the graphs. First, we need to generate sample data and solve for those thresholds.
+
+The thresholds are the core output of this whole process.They tell you what BirdNET score (confidence or logit) yields a given probability of achieving a correct prediction.
+
+```{r thresholds}
+  prediction.range.conf=seq(0,1,.001) 
+  prediction.range.logit=seq(-3,7,.1) # this is the approximate range of the logit scores
+  
+  predictions.conf=predict(conf.model, list(confidence=prediction.range.conf), type='r')
+  predictions.logit=predict(logit.model, list(logit=prediction.range.logit), type='r')
+  
+  # thresholds for pr(tp)= .90, 0.95, and 0.99
+  cutoff90.c=(log(.90/(1-.90))-conf.model$coefficients[1])/conf.model$coefficients[2]
+  cutoff95.c=(log(.95/(1-.95))-conf.model$coefficients[1])/conf.model$coefficients[2]
+  cutoff99.c=(log(.99/(1-.99))-conf.model$coefficients[1])/conf.model$coefficients[2]
+  
+  cutoff90.l=(log(.90/(1-.90))-logit.model$coefficients[1])/logit.model$coefficients[2]
+  cutoff95.l=(log(.95/(1-.95))-logit.model$coefficients[1])/logit.model$coefficients[2]
+  cutoff99.l=(log(.99/(1-.99))-logit.model$coefficients[1])/logit.model$coefficients[2]
+
+```
+
+```{r plots}
+  par(mfrow=c(1,2))
+  
+  plot(correct~confidence, data, main = 'Confidence scores',
+       ylab = 'pr(BirdNET prediction is correct)', xlab = 'confidence score',
+       xlim=range(prediction.range.conf), pch=16, cex=1.5, col=rgb(0,0,0,.2))
+  
+  lines(predictions.conf~prediction.range.conf, lwd=4, col=rgb(0,.75,1,.5))
+  abline(v=cutoff90.c, col='orange', lwd=4)
+  abline(v=cutoff95.c, col='red', lwd=4)
+  abline(v=cutoff99.c, col='magenta', lwd=4)
+  
+  plot(correct~logit, data, main = 'Logit scores',
+       ylab = 'pr(BirdNET prediction is correct)', xlab = 'logit score',
+       xlim=range(prediction.range.logit), pch=16, cex=1.5, col=rgb(0,0,0,.2))
+  
+  lines(predictions.logit~prediction.range.logit, lwd=4, col=rgb(0,.75,1,.5))
+  abline(v=cutoff90.l, col='orange', lwd=4)
+  abline(v=cutoff95.l, col='red', lwd=4)
+  abline(v=cutoff99.l, col='magenta', lwd=4)
+
+```
+
+## Bonus: multispecies loop
+
+If you have validated predictions for many species, probabilistic thresholds can be generated in bulk via a loop. This is a simple extension of the single-species example above. First, read in all the species-specific .csv files containing the validation results and create some basic objects that will be used for each species. This loop assumes that each species’ validation file is formatted identically to the one provided in the example above.
+
+```{r multispecies data}
+  #fill in filepath below (uses current working directory in this case)
+  species.list=list.files(path='.', recursive=T, pattern='csv$', full.names = T)
+  
+  output=NULL             # create an empty object to store your outputs
+  prediction.range.conf=seq(0,1,.001) 
+  prediction.range.logit=seq(-3,7,.1) # this is the approximate range of the logit scores
+  
+  predictions.conf=predict(conf.model, list(confidence=prediction.range.conf), type='r')
+  predictions.logit=predict(logit.model, list(logit=prediction.range.logit), type='r')
+  
+  logistic.plot="yes" # do you want to plot the logistic curves?
+  histogram="no"      # do you want a histogram of each species' scores?
+  par(mfrow=c(2,4))
+```
+
+The most important output of the multispecies loop is a dataframe containing the logistic equation associated with each species, and a few arbitrary but commonly used probablistic cutoffs (e.g., pr(true positive) \> 0.95). We have kept it basic here, but additional columns such as the AIC values of logit-based and confidence-based logistic regression models might be desired.
+
+```{r run the loop}
+for(s in 1:length(species.list)){
+  dt=read.csv(species.list[s])
+  dt$logit=log(dt$confidence/(1-dt$confidence))
+  species=substr(species.list[s], 3, 6)
+  # this assumes the files are named after their species
+  # the '27' and '4' are unique to the file path and will change in your example
+  output$species[s]=species
+  
+  #tmp.mod.conf=glm(correct~confidence, dt, family = 'binomial')
+  tmp.mod.logit=glm(correct~logit, dt, family = 'binomial')
+
+  #predictions.conf=predict(tmp.mod.conf, list(logit=prediction.range.conf), type='r')
+  predictions.logit=predict(tmp.mod.logit, list(logit=prediction.range.logit), type='r')
+  
+  # Note: as long as you have the logistic regression model components, you can solve for any threshold you want
+  output$intercept[s]=tmp.mod.logit$coefficients[1]
+  output$beta[s]=tmp.mod.logit$coefficients[2]
+  
+  # Choose your probabilistic thresholds here
+  cutoff85.l=(log(.85/(1-.85))-tmp.mod.logit$coefficients[1])/tmp.mod.logit$coefficients[2]
+  cutoff90.l=(log(.90/(1-.90))-tmp.mod.logit$coefficients[1])/tmp.mod.logit$coefficients[2]
+  cutoff95.l=(log(.95/(1-.95))-tmp.mod.logit$coefficients[1])/tmp.mod.logit$coefficients[2]
+  cutoff99.l=(log(.99/(1-.99))-tmp.mod.logit$coefficients[1])/tmp.mod.logit$coefficients[2]
+  
+  output$cutoff85[s] = cutoff85.l
+  output$cutoff90[s] = cutoff90.l
+  output$cutoff95[s] = cutoff95.l
+  output$cutoff99[s] = cutoff99.l
+  
+  if(logistic.plot=="yes"){
+    plot(correct~logit, dt, main=species,
+         xlim=range(prediction.range.logit), pch=16, cex=1.5, col=rgb(0,0,0,.2))
+    lines(predictions.logit~prediction.range.logit, lwd=4, col=rgb(0,.75,1,.5))
+    abline(v=cutoff85.l, col='yellow', lwd=4)
+    abline(v=cutoff90.l, col='orange', lwd=4)
+    abline(v=cutoff95.l, col='red', lwd=4)
+    abline(v=cutoff99.l, col='magenta', lwd=4)
+    
+  if(histogram=="yes"){
+    hist(dt$logit, main=species,
+         xlim=range(prediction.range.logit), breaks=seq(0,100,10),lty='blank', xlab='Score')
+    abline(v=cutoff95.l, col=rgb(1,.5,0,.7), lwd=5)
+    abline(v=cutoff99.l, col=rgb(1,0,0,.7), lwd=5)
+  }
+  
+  if(s==length(species.list)){
+    output=data.frame(output)
+  }
+  }
+}
+
+write.csv(output, 'validation_outputs.csv', row.names=F)  
+```
+
+Even with 100+ species each with up to 200 validation examples, this loop can run quite quickly on a standard commericial-grade computer. Thus, you can readily adjust what is saved and what types of plots are generated. Sometimes it is useful to view the logistic plots for both confidence- and logit-score based models (and sometimes it isn’t - and for multi-species applications we generally suggest choosing one score type and sticking with it for simplicity). Viewing histograms of the distribution of prediction scores can also be useful early in the process to get a sense of the overall distribution of scores for any given species.
