@@ -1,24 +1,36 @@
 ---
-title: "BirdNET_detection"
+title: "BirdNET thresholding for detection data"
 output: html_document
 date: "2026-01-14"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## This code has been modified from supplementary material in:
+## Code source
+
+*This code has been modified from supplementary material included in:*
 
 Wood, C.M., Kahl, S. Guidelines for appropriate use of BirdNET scores and other detector outputs. J Ornithol 165, 777–782 (2024). <https://doi.org/10.1007/s10336-024-02144-5>
 
+*Important notes:*
+
+-   BirdNET confidence scores are not probabilistic, although they are between 0 and 1
+
+-   confidence scores (and thresholds produced below) are not transferable among species or recording settings 
+
+## Code purpose
+
+We use logistic regression to create probabilistic BirdNET score thresholds for compiling a species detection history.
+
 ## 1) Manually validate BirdNET predictions
 
-Randomly select samples from the BirdNET output to manually validate as to whether it correctly identified the species. For example, you may generate 100 samples from confidence scores ranging 0.1 to 1.0 and 100 samples from confidence scores 0.95 to 1.0, as we have done here. More or less may be needed to encompass the full variation in any given dataset. You could also set a lower bound that 0.95.
+Randomly select samples from the BirdNET output and manually validate whether BirdNET correctly identified the species. For example, you may generate 100 samples from confidence scores ranging from 0.1 to 1.0 and 100 samples from confidence scores ranging from 0.95 to 1.0. That is what we have done here for the Phainopepla (phai) bird dataset. More or less samples may be needed to encompass the full variation in any given dataset. You could also set a lower bound than 0.95 (e.g., 0.90) for the higher-confidence samples.
 
-## 2) Run the validation results into R
+## 2) Read the validation results into R
 
-Column descriptions:
+*Data column descriptions:*
 
 **full_id** = the audio clip
 
@@ -29,14 +41,17 @@ Column descriptions:
 ```{r data}
 #read data
 data = read.csv('phai_validation.csv') 
-#transform confidence scores to logit scale
+#transform confidence scores to logit scale (an unbounded metric) 
 data$logit=log(data$confidence/(1-data$confidence))
-
+#we do this becasue the highest confidence scores tend to be compressed in a 0-1 scale
+head(data)
+range(data$logit)
+range(data$confidence)
 ```
 
 ## 2) Fit logistic regression models
 
-We will fit three logistic regression models to the data, a null model which assumes no relationship between BirdNET score and prediction outcome, one relating confidence score to prediction outcome, one relating the original logit score to prediction outcome. Then we’ll see which model has the most support from the data, as evidenced by a lower AIC score.
+We will fit three logistic regression models to the data, a null model which assumes no relationship between BirdNET score and prediction outcome, one relating confidence score to prediction outcome, and one relating the logit score to prediction outcome. Then we’ll see which model has the most support from the data, as evidenced by a lower AIC score.
 
 ```{r models}
   
@@ -51,29 +66,42 @@ We will fit three logistic regression models to the data, a null model which ass
 
 ```
 
-## 3) Plot the results
+## 3) Calculate thresholds and plot the results
 
 It can be helpful to visualize the logistic curve and the results. We can solve the logistic equation for the desired probability thresholds and plot them as vertical lines on the graphs. First, we need to generate sample data and solve for those thresholds.
 
-The thresholds are the core output of this whole process.They tell you what BirdNET score (confidence or logit) yields a given probability of achieving a correct prediction.
+The thresholds are the core output of this whole process. They tell you what BirdNET score (confidence or logit) yields a given probability of achieving a correct prediction.
 
 ```{r thresholds}
+  #generate a prediciton range from the min and max confidence score
   prediction.range.conf=seq(0,1,.001) 
-  prediction.range.logit=seq(-3,7,.1) # this is the approximate range of the logit scores
+  #generate a prediciton range from the min and max logit score
+  prediction.range.logit=seq(-3,7,.1) 
   
+  #predict whether a species detection is correct based on the confidence model
   predictions.conf=predict(conf.model, list(confidence=prediction.range.conf), type='r')
+    #predict whether a species detection is correct based on the logit model
   predictions.logit=predict(logit.model, list(logit=prediction.range.logit), type='r')
   
-  # thresholds for pr(tp)= .90, 0.95, and 0.99
-  cutoff90.c=(log(.90/(1-.90))-conf.model$coefficients[1])/conf.model$coefficients[2]
-  cutoff95.c=(log(.95/(1-.95))-conf.model$coefficients[1])/conf.model$coefficients[2]
-  cutoff99.c=(log(.99/(1-.99))-conf.model$coefficients[1])/conf.model$coefficients[2]
+  # solve for the desired thresholds for pr(true positive): .90, 0.95, and 0.99
   
-  cutoff90.l=(log(.90/(1-.90))-logit.model$coefficients[1])/logit.model$coefficients[2]
-  cutoff95.l=(log(.95/(1-.95))-logit.model$coefficients[1])/logit.model$coefficients[2]
-  cutoff99.l=(log(.99/(1-.99))-logit.model$coefficients[1])/logit.model$coefficients[2]
+  #confidence score model
+  c.intercept = conf.model$coefficients[1]
+  c.beta = conf.model$coefficients[2]
+  cutoff90.c=(log(.90/(1-.90))-c.intercept)/c.beta
+  cutoff95.c=(log(.95/(1-.95))-c.intercept)/c.beta
+  cutoff99.c=(log(.99/(1-.99))-c.intercept)/c.beta
+  
+  #logit model
+  l.intercept = logit.model$coefficients[1]
+  l.beta = logit.model$coefficients[2]
+  cutoff90.l=(log(.90/(1-.90))-l.intercept)/l.beta
+  cutoff95.l=(log(.95/(1-.95))-l.intercept)/l.beta
+  cutoff99.l=(log(.99/(1-.99))-l.intercept)/l.beta
 
 ```
+
+Now we plot our results.
 
 ```{r plots}
   par(mfrow=c(1,2))
@@ -98,6 +126,102 @@ The thresholds are the core output of this whole process.They tell you what Bird
 
 ```
 
+## 4) Interpreting the results to select a threshold
+
+In this case the logit scores performed better based on AIC model selection. Assuming that we use the logit score model, we now have three threshold values to pick from for creating a detection history with a 90%, 95%, or 99%, probability a detection is a true positive.
+
+To decide which threshold to use can depend on whether it is more important in your study to include as many true positives as possible (i.e., high recall) or to strictly ensure few false positives are included (i.e., high precision). Identifying how many observations are removed under each threshold and how many false positives may be included can be a useful way to determine which threshold you want to use. For example.
+
+```{r choosing threshold}
+
+#calculate recall and precision for each threshold
+data$include.90 <- ifelse(data$logit >= cutoff90.l & data$correct == 1, "tp", NA)
+data$include.90 <- ifelse(data$logit < cutoff90.l & data$correct == 1, "fn", data$include.90)
+data$include.90 <- ifelse(data$logit < cutoff90.l & data$correct == 0, "tn", data$include.90)
+data$include.90 <- ifelse(data$logit >= cutoff90.l & data$correct == 0, "fp", data$include.90)
+r.90 <- sum(data$include.90 == "tp")/sum(data$include.90 == "tp" | data$include.90 == "fn")
+p.90 <- sum(data$include.90 == "tp")/sum(data$include.90 == "tp" | data$include.90 == "fp")
+table(data$include.90, useNA = "ifany")
+
+
+
+data$include.95 <- ifelse(data$logit >= cutoff95.l & data$correct == 1, "tp", NA)
+data$include.95 <- ifelse(data$logit < cutoff95.l & data$correct == 1, "fn", data$include.95)
+data$include.95 <- ifelse(data$logit < cutoff95.l & data$correct == 0, "tn", data$include.95)
+data$include.95 <- ifelse(data$logit >= cutoff95.l & data$correct == 0, "fp", data$include.95)
+r.95 <- sum(data$include.95 == "tp")/sum(data$include.95 == "tp" | data$include.95 == "fn")
+p.95 <- sum(data$include.95 == "tp")/sum(data$include.95 == "tp" | data$include.95 == "fp")
+table(data$include.95, useNA = "ifany")
+
+
+data$include.99 <- ifelse(data$logit >= cutoff99.l & data$correct == 1, "tp", NA)
+data$include.99 <- ifelse(data$logit < cutoff99.l & data$correct == 1, "fn", data$include.99)
+data$include.99 <- ifelse(data$logit < cutoff99.l & data$correct == 0, "tn", data$include.99)
+data$include.99 <- ifelse(data$logit >= cutoff99.l & data$correct == 0, "fp", data$include.99)
+r.99 <- sum(data$include.99 == "tp")/sum(data$include.99 == "tp" | data$include.99 == "fn")
+p.99 <- sum(data$include.99 == "tp")/sum(data$include.99 == "tp" | data$include.99 == "fp")
+table(data$include.99, useNA = "ifany")
+
+
+#combine into one dataframe
+summary <- data.frame(
+  threshold = c(.90, .95, .99),
+  recall = c(r.90, r.95, r.99),
+  precision = c(p.90, p.95, p.99)
+)
+summary
+
+
+
+
+```
+
+From this we can see that, for this validation dataset, all thresholds resulted in equal precision: no false positives were included. In terms of recall, there was greater variability. With a 99% threshold, 31% of true positives would be removed. That may not be a big deal if detections are common, but it is worth considering in your choice of threshold.
+
+You might also want to check how different thresholds affect the number of sites that have detections or not. Ideally, the thresholds will produce the same number of sites where detections occurred. 
+
+## 5) Creating a detection history
+
+Let us assume we choose a 90% threshold. We would then subset the full BirdNET output to include only detections that meet or exceed the threshold value and create a visit-by-site detection history. For the purpose of this tutorial we will pretend the validation dataset is the full output 
+
+```{r create detection history}
+
+#subset the data (this would be the full BirdNET output, not just the validation data)
+data.90 <- subset(data, logit >= cutoff90.l)
+
+#extract the site name (this is unique to these file names, you will have to adjust for your own file names)
+data.90$site <- regmatches(
+  data.90$full_id,
+  regexpr("G.{3}", data.90$full_id)
+)
+#reorder the dataframe by date
+data.90$date <- regmatches(
+  data.90$full_id,
+  regexpr("2021.{4}", data.90$full_id)
+)
+data.90 <- data.90[order(data.90$date), ]
+
+#keep only one visit per day
+data.90 <- unique(data.90[, c("site", "date")])
+
+#add value for detection
+data.90$det <- 1
+
+#format for occupancy modeling 
+data.occu <- reshape(data.90,
+                idvar = "site",
+                timevar = "date",
+                direction = "wide")
+
+#fill in non-detections with zeros
+data.occu[is.na(data.occu)] <- 0
+#NOTE: This assumes that ARUs were running over all recording days across all sites
+  #if ARUs were not recording on a given day and site, those days need to coded as NA not zero
+
+```
+
+The next step, not shown here, would be to include all of the sites where no detections occurred and add them to the detection history produced above.
+
 ## Bonus: multispecies loop
 
 If you have validated predictions for many species, probabilistic thresholds can be generated in bulk via a loop. This is a simple extension of the single-species example above. First, read in all the species-specific .csv files containing the validation results and create some basic objects that will be used for each species. This loop assumes that each species’ validation file is formatted identically to the one provided in the example above.
@@ -108,7 +232,7 @@ If you have validated predictions for many species, probabilistic thresholds can
   
   output=NULL             # create an empty object to store your outputs
   prediction.range.conf=seq(0,1,.001) 
-  prediction.range.logit=seq(-3,7,.1) # this is the approximate range of the logit scores
+  prediction.range.logit=seq(-3,8,.1) # this is the approximate range of the logit scores
   
   predictions.conf=predict(conf.model, list(confidence=prediction.range.conf), type='r')
   predictions.logit=predict(logit.model, list(logit=prediction.range.logit), type='r')
@@ -126,13 +250,13 @@ for(s in 1:length(species.list)){
   dt$logit=log(dt$confidence/(1-dt$confidence))
   species=substr(species.list[s], 3, 6)
   # this assumes the files are named after their species
-  # the '27' and '4' are unique to the file path and will change in your example
+  # the '3' and '6' are unique to the file path and will change in your example
   output$species[s]=species
   
   #tmp.mod.conf=glm(correct~confidence, dt, family = 'binomial')
   tmp.mod.logit=glm(correct~logit, dt, family = 'binomial')
 
-  #predictions.conf=predict(tmp.mod.conf, list(logit=prediction.range.conf), type='r')
+  #predictions.conf=predict(tmp.mod.conf, list(confidence=prediction.range.conf), type='r')
   predictions.logit=predict(tmp.mod.logit, list(logit=prediction.range.logit), type='r')
   
   # Note: as long as you have the logistic regression model components, you can solve for any threshold you want
@@ -172,7 +296,7 @@ for(s in 1:length(species.list)){
   }
 }
 
-write.csv(output, 'validation_outputs.csv', row.names=F)  
+output
 ```
 
 Even with 100+ species each with up to 200 validation examples, this loop can run quite quickly on a standard commericial-grade computer. Thus, you can readily adjust what is saved and what types of plots are generated. Sometimes it is useful to view the logistic plots for both confidence- and logit-score based models (and sometimes it isn’t - and for multi-species applications we generally suggest choosing one score type and sticking with it for simplicity). Viewing histograms of the distribution of prediction scores can also be useful early in the process to get a sense of the overall distribution of scores for any given species.
