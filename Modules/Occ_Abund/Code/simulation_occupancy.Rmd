@@ -8,15 +8,16 @@ editor_options:
 
 # Recommended reading
 
-\# Designing occupancy studies: General advice and allocating survey effort (Mackenzie and Royle 2005) \# What does 'occupancy' mean in passive acoustic surveys? (Wood and Peery 2022)
+-   Designing occupancy studies: General advice and allocating survey effort (Mackenzie and Royle 2005)
+
+-   What does 'occupancy' mean in passive acoustic surveys? (Wood and Peery 2022)
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r load packages}
 #Load packages
-
-```{r }
 library(unmarked) #for occupancy modeling
 library(ggplot2) #for plotting
 
@@ -53,7 +54,7 @@ for (i in 1:M) {
 
   # Create unmarkedFrame
   umf1 <- unmarkedFrameOccu(y = detection_history)
-  ?occu()
+  # run ?occu() to read more about the function
   mod1 <- occu(~1~1, umf1)
   # check that occupancy and detection matches our inputs
   plogis(coef(mod1))
@@ -145,7 +146,7 @@ set.seed(123)
 
 ## Plot results
 
-We will not plot our raw data and predictions for occupancy as function of elevation. After running this, return to the above code chunk and manipulate, M, J, $\psi$, $p$, and the elevation coefficient to examine how that influences your output.
+We will now plot our raw data and predictions for occupancy as function of elevation.
 
 ```{r plotting}
 set.seed(123)
@@ -174,7 +175,7 @@ set.seed(123)
 #Manually simulate occupancy data
 M <- 100 # Number of sites #CHANGE ME
 J <- 3 # Number of surveys per site #CHANGE ME
-p <- 0.5 # True detection probability #CHANGE ME
+p <- 0.9 # True detection probability #CHANGE ME
 psi <- qlogis(0.5) #Assign psi on probability scale and then change it to logit scale #CHANGE ME
 
 
@@ -206,14 +207,14 @@ for (i in 1:M) {
 
 pred.exp <- predict(mod.exp, newdata = newdata, type = "state", appendData = TRUE)
 head(pred.exp)
+pred.exp$type <- "change"
+
+pred$type <- "orig"
+pred.exp <- rbind(pred, pred.exp)
 
 ggplot(data = pred.exp) +
-  #add lines for the new outputs
-  geom_line(aes(x = elev, y = Predicted), col = "blue")  + 
-  geom_ribbon(aes(x = elev, ymin = lower, ymax = upper), fill = "blue", alpha = 0.1) +
-  #add lines for the original output with p = 0.5, psi = 0.5
-  geom_line(aes(x = pred$elev, y = pred$Predicted))  + 
-  geom_ribbon(aes(x = pred$elev, ymin = pred$lower, ymax = pred$upper), alpha = 0.1) +
+  geom_line(aes(x = elev, y = Predicted, color = type))  + 
+  geom_ribbon(aes(x = elev, ymin = lower, ymax = upper, fill = type), alpha = 0.1)+
   theme_minimal()
   
 ```
