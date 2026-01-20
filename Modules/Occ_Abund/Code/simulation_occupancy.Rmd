@@ -6,6 +6,10 @@ editor_options:
   chunk_output_type: inline
 ---
 
+# Recommended reading
+
+\# Designing occupancy studies: General advice and allocating survey effort (Mackenzie and Royle 2005) \# What does 'occupancy' mean in passive acoustic surveys? (Wood and Peery 2022)
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 ```
@@ -22,8 +26,7 @@ library(ggplot2) #for plotting
 
 First we will manually simulate true occupancy and detection matrices by providing the following parameters:
 
-$\psi$ - mean occupancy probability across sites
-$p$ - detection probability (assumed constant across all sites and visits; this could be relaxed)
+$\psi$ - mean occupancy probability across sites $p$ - detection probability (assumed constant across all sites and visits; this could be relaxed)
 
 ```{r manual simulation}
 set.seed(123) #to ensure we all get the same values from simulation
@@ -31,7 +34,7 @@ set.seed(123) #to ensure we all get the same values from simulation
 #Manually simulate occupancy data
 M <- 100 # Number of sites
 psi <- 0.5 # True occupancy probability 
-occupancy_status <- rbinom(M, 1, psi) # Simulate true site occupancy status
+occupancy_status <- rbinom(M, 1, psi) # simulate occupancy for 100 sites (1 trial per site)
 
 J <- 3 # Number of surveys per site
 p <- 0.5 # True detection probability
@@ -50,16 +53,16 @@ for (i in 1:M) {
 
   # Create unmarkedFrame
   umf1 <- unmarkedFrameOccu(y = detection_history)
+  ?occu()
   mod1 <- occu(~1~1, umf1)
   # check that occupancy and detection matches our inputs
   plogis(coef(mod1))
 
 ```
 
-
 ## Simulate occupancy with a single covariate (e.g., elevation)
 
-Next we will build on the above simulation and allow occupancy to vary by differences in elevation by site. 
+Next we will build on the above simulation and allow occupancy to vary by differences in elevation by site.
 
 ```{r manual simulation with cov}
 set.seed(123)
@@ -100,7 +103,7 @@ for (i in 1:M) {
 
 ## Simulate occupancy using simulate() in the package 'unmarked'
 
-Alternatively, you can simulate occupancy in the package 'unmarked'. 
+Alternatively, you can simulate occupancy in the package 'unmarked'.
 
 ```{r manual simulation with unmarked}
 set.seed(123)
@@ -139,9 +142,10 @@ set.seed(123)
   plogis(coef(mod3))
   
 ```
+
 ## Plot results
 
-We will not plot our raw data and predictions for occupancy as function of elevation. After running this, return to the above code chunk and manipulate, M, J, $\psi$, $p$, and the elevation coefficient to examine how that influences your output. 
+We will not plot our raw data and predictions for occupancy as function of elevation. After running this, return to the above code chunk and manipulate, M, J, $\psi$, $p$, and the elevation coefficient to examine how that influences your output.
 
 ```{r plotting}
 set.seed(123)
@@ -160,10 +164,9 @@ ggplot(data = pred) +
   
 ```
 
-
 ## Explore varying parameter values and the outcome on occupancy and uncertainity
 
-Manipulate, M, J, $\psi$, $p$, and the elevation coefficient to examine how that influences your output. See "#CHANGE ME" for places to modify. 
+Manipulate, M, J, $\psi$, $p$, and the elevation coefficient to examine how that influences your output. See "#CHANGE ME" for places to modify.
 
 ```{r exploration}
 set.seed(123)
