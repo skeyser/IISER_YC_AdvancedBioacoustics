@@ -1,0 +1,188 @@
+---
+title: "Density estimation - Vocal activity rate and count data"
+author: "Meghan A. Beatty"
+date: "2026-01-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Code purpose
+
+We have three goals:
+
+1.  Calculate species vocal activity rate (e.g., \# detections per sampling occasion) from BirdNET output.
+
+2.  Estimate abundance using count data and N-mixture models.
+
+3.  Relate vocal activity rate (VAR) to estimated species abundance to calculate an acoustically-derived index of abundance. We will also compare how this relationship changes when using raw count data.
+
+## 1) Calculate species vocal activity rate from BirdNET output
+
+In a real-world use case, we would use the BirdNET output to calculate different measures of VAR to test. Example measures of VAR could include:
+
+-   \# detections per sampling occasion
+
+-   time to first to detection per sampling occasion
+
+-   time between first and last detection per sampling occasion
+
+For simplicity, here will simulate detections per sampling occasion for an imaginary species. A sampling occasion could vary greatly depending on your species and study design. For example, if the ARUs are paired with an avian point count study, you may calculate the number of songs initiated within a 10-minute interval. If your ARU's are paired with counts of elephants, it may be the number of bugles detected over the course of an hour. We assume if no individuals were there not detections were recorded (no false positives).
+
+```{r simulate VAR}
+
+#set seed to ensure we get the same values
+set.seed(123)
+
+#simulate detections per sampling occasion using a truncated poisson
+#create mean values of detections per site
+means <- rep(c(0,5,10,15,20),10)
+means
+#create a site by visit dataframe to fill in with a detection history
+var <- matrix(NA, nrow = 50, ncol = 10)
+
+#simulate detections per sampling occasion based on the mean assigned above
+for (i in 1:nrow(var)) {
+    tmp <- rpois(ncol(var), lambda = means[i])
+    var[i, ] <- tmp[1:ncol(var)]
+  }
+var <- as.data.frame(var)
+
+#get average detections per site
+var.mean <- rowMeans(var); var.mean
+
+```
+
+We now have a simulated dataframe of the number of songs detected for a single bird species across 50 sites and 10 surveys per site.
+
+## 2) Estimate abundance using count data and N-mixture models
+
+In a real-world use case, we would use counts collected at human audio/visual count surveys that were paired with ARUs. Here we will simulate count data that meets our expectation that VAR increases with increasing animal density.
+
+```{r simulate counts}
+
+#define number of sites and number of sampling occassions to match the count data
+nSites <- 50
+nOcc   <- 10
+
+# define true abundance (i.e., the number of birds varies between 0 and 4 birds per site, thus our simulated data expects that a bird vocalizes 5x per sampling occasion)
+N <- rep(c(0:4),10) 
+# define true detection
+p <- 0.5                
+
+#dataframe for observed abundance
+y <- matrix(NA, nSites, nOcc) 
+
+#simulate observed abundance 
+for(i in 1:nSites){
+  y[i, ] <- rbinom(nOcc, N[i], p) 
+}
+
+
+```
+
+Next we will take our simulated observed counts and estimate abundance at each site using an N-mixture model in the 'unmarked' package, incorporating imperfect detection of individuals at each site.
+
+```{r estimate abundance}
+
+library(unmarked)
+
+#define site names
+sites <- paste0("site", 1:50)
+
+#run the unmarked model
+umf <- unmarkedFramePCount(y = y, siteCovs = data.frame(sites=as.factor(sites)))
+
+#K is the maximum expected number for N
+model1 <- pcount(~1 ~sites-1, umf, K = 6)
+head(model1)
+
+#this should be close to our defined p
+plogis(coef(model1, type="det")) 
+
+#get predicted abundance per site
+pred <- predict(model1, type = "state")
+
+#round Predicted to integer for use below
+pred$Predicted <- round(pred$Predicted,3)
+pred$abund.est <- round(pred$Predicted, 0)
+pred
+
+```
+
+## 2) Relate vocal activity rate (VAR) to estimated species abundance and raw count data
+
+```{r glm}
+
+#add the maximum raw count per site to the prediction dataframe
+pred$max.count <- apply(y, 1, max)
+
+#add VAR per site to the prediction dataframe
+pred$var <- var.mean
+
+#look at correlations between counts and VAR
+cor(pred[, c("var", "abund.est", "max.count")])
+
+#relate estimated abundance to VAR 
+m.abund <- glm(abund.est ~ var, family = poisson, data = pred)
+summary(m.abund)
+
+#relate maximum observed count to VAR 
+m.count <- glm(max.count ~ var, family = poisson, data = pred)
+summary(m.count)
+
+```
+Let's compare the results on a plot.
+
+```{r plot}
+
+#create data for predictions
+newdata <- as.data.frame(pred)
+
+#predict abundance
+abund.pred <- predict(m.abund, newdata = newdata, type = "response", se.fit = TRUE)
+# 95% CI
+abund.pred <- data.frame(
+  fit   = abund.pred$fit,
+  se    = abund.pred$se.fit,
+  lower = abund.pred$fit - 1.96 * abund.pred$se.fit,
+  upper = abund.pred$fit + 1.96 * abund.pred$se.fit
+  )
+abund.pred$type <- "abund"
+abund.pred$abund <- N
+abund.pred$var <- newdata$var
+
+#predict observed counts
+count.pred <- predict(m.count, newdata = newdata, type = "response", se.fit = TRUE)
+# 95% CI
+count.pred <- data.frame(
+  fit   = count.pred$fit,
+  se    = count.pred$se.fit,
+  lower = count.pred$fit - 1.96 * count.pred$se.fit,
+  upper = count.pred$fit + 1.96 * count.pred$se.fit
+  )
+count.pred$type <- "count"
+count.pred$abund <- N
+count.pred$var <- newdata$var
+
+
+#combine dataframes
+plot <- rbind(abund.pred, count.pred)
+
+#plot results
+library(ggplot2)
+ggplot(plot) +
+  geom_line(aes(x = var, y = fit, color = type))  + 
+  geom_point(aes(x = var, y = abund, fill = type)) +
+  #geom_ribbon(aes(x = var, ymin = lower, ymax = upper), alpha = 0.1) + #to look at confidence intervals
+  #facet_wrap(~type) + #to make each plot in it's own pane
+  ylab("abundance") + xlab("vocal activity rate") +
+  theme_classic()
+
+
+```
+
+Was VAR a better predictor of estimated abundance or the maximum observed counts? How does this change as we change our detection probability defined above (p)?
+
