@@ -54,16 +54,16 @@ The following programs are used in the demos and hands-on sections of the variou
 
 ### BirdNET Analyzer
 BirdNET Analyzer is a GUI for processing audio data, with functionality including supervised deep learning detection/classification using the BirdNET model, custom model development using BirdNET as a foundation, detection review and classifier performance evaluation, etc. BirdNET and BirdNET Analyzer are developed and maintained by the K. Lisa Yang Center for Conservation Bioacoustics at Cornell University, and Chemnitz University of Technology.
-  1. Download BirdNET Analyzer v2.4.0 installer from the BirdNET GitHub repository releases page
+  1. Download BirdNET Analyzer v2.4.0 installer from the [BirdNET GitHub repository releases page](https://github.com/birdnet-team/BirdNET-Analyzer/releases/tag/v2.4.0)
   2. Double click the downloaded installer file to run it; you may need to tell your computer that it is safe to run. Click **More info** and **Run anyway**.
   3. Accept the license agreement and click **Next**. Check the box to create a desktop shortcut and click **Next**. Click **Install**.
 
 ### Raven Annotate
-Raven Annotate is a new Raven Workbench module that provides functionality for loading and visualizing raw sound files and annotating acoustic events. It is developed and maintained by the K. Lisa Yang Center for Conservation Bioacoustics at Cornell University.
+Raven Annotate is a new [Raven Workbench](https://www.birds.cornell.edu/ccb/raven-pro/) module that provides functionality for loading and visualizing raw sound files and annotating acoustic events. It is developed and maintained by the K. Lisa Yang Center for Conservation Bioacoustics at Cornell University.
   1. Use one of the following links to download the appropriate Raven Annotate installer, according to your operating system:
-    1. Windows: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/win_x64/Raven-Annotate-1.0.1.exe
-    2. MacOS: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/mac_arm64/Raven-Annotate-1.0.1.dmg
-    3. Linux: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/linux_x64/raven-annotate_1.0.1-1_amd64.deb 
+    Windows: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/win_x64/Raven-Annotate-1.0.1.exe
+    MacOS: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/mac_arm64/Raven-Annotate-1.0.1.dmg
+    Linux: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/linux_x64/raven-annotate_1.0.1-1_amd64.deb 
   2. Locate the installer in your **Downloads** folder and double click to run.
   3. Follow the prompts to complete installation by accepting the license agreement and clicking **Install**.
 
