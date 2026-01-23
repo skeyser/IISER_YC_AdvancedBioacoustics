@@ -60,10 +60,10 @@ BirdNET Analyzer is a GUI for processing audio data, with functionality includin
 
 ### Raven Annotate
 Raven Annotate is a new [Raven Workbench](https://www.birds.cornell.edu/ccb/raven-pro/) module that provides functionality for loading and visualizing raw sound files and annotating acoustic events. It is developed and maintained by the K. Lisa Yang Center for Conservation Bioacoustics at Cornell University.
-  1. Use one of the following links to download the appropriate Raven Annotate installer, according to your operating system:
-    Windows: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/win_x64/Raven-Annotate-1.0.1.exe
-    MacOS: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/mac_arm64/Raven-Annotate-1.0.1.dmg
-    Linux: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/linux_x64/raven-annotate_1.0.1-1_amd64.deb 
+  1. Use one of the following links to download the appropriate Raven Annotate installer, according to your operating system:  
+    Windows: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/win_x64/Raven-Annotate-1.0.1.exe  
+    MacOS: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/mac_arm64/Raven-Annotate-1.0.1.dmg  
+    Linux: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/linux_x64/raven-annotate_1.0.1-1_amd64.deb  
   2. Locate the installer in your **Downloads** folder and double click to run.
   3. Follow the prompts to complete installation by accepting the license agreement and clicking **Install**.
 
