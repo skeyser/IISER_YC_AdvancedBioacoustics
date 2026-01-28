@@ -1,0 +1,696 @@
+---
+title: "Fitting Occupancy Models using Unmarked"
+author: "Spencer R Keyser"
+affilitation: "K. Lisa Yang Center for Conservation Bioacoustics, Cornell Lab of Ornithology, Cornell University"
+date: "2026-01-23"
+output: 
+  html_document:
+    code_folding: hide
+    code_download: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Package Loading
+```{r Package Loading, echo = FALSE}
+library(dplyr)
+library(ggplot2)
+library(here)
+library(unmarked)
+library(spatialEco)
+library(AICcmodavg)
+library(patchwork)
+```
+
+## Data loading and preparation
+
+First thing we want to do is load in our data from *Occ_Data_Prep.R*. The data should be in the subdirectory *./Modules/Occ_Abund/Data/Occ_Data/*.
+
+```{r Data Loading}
+## Set seed for consistency
+set.seed(212)
+
+## We saved the data as an RDS file type
+occ.dat <- readRDS(here("./Modules/Occ_Abund/Data/Occ_Data/UnmarkedData_SpeciesThresh_975minMaxPrex_NewVars.rds"))
+
+## Structure of the object
+str(occ.dat)
+
+## Check the dimensions of our observation data
+dim(occ.dat$y)
+head(occ.dat$y[1,,])
+```
+
+We see that our detection/non-detection data `y` is a 3-dimensional array with 86 species, 1625 sites, and 5 sampling events. `str(occ.dat)` further shows the full object contains: 
+  1. `y`: Detection/non-detection data.
+  2. A list of two data frames for two survey-level covariates `eff.hrs` and `eff.jday` which are the sum of listening hours per unit per 6-day collapsed sampling period and the mean ordinal date of the 6-day period, respectively. 
+  3. A data frame of site-level covariates.
+
+The first thing we want to do is reorient the array of capture histories to move species to the third dimension (this is purely for convenience).
+```{r Structuring Observations}
+occ.dat$y <- aperm(occ.dat$y, c(2,3,1))
+```
+Next, we will do a small subsetting exercise to limit the number of sites for speed and to make the dataset more realistic for smaller scale projects. This also has the added bonus of potentially reducing spatial autocorrelation in the data, but this would need to be formally verified. We apply a simple distance-based threshold for subsampling using `spatialEco::subsample.distance` to take 200 ARUs that are at least 1km apart from one another. As a note: If you are unfamiliar with the `|>` syntax you can check documentation from the `tidyverse` family of packages. `|>` and `%>%` are both known as "pipe" operators. They are used to string together chains of functions that all operate in sequence on an object. After getting the subsample of sites `subARU` we can use that to subset `y`, the observation covariates `obsCovs`, and the site covariates `siteCovs`.   
+```{r Spatial Subsampling}
+## To reduce the amount of data let's subset to 500 random locations with a minimum of 1km between points
+siteCovs <- occ.dat$siteCovs
+siteCovs$Cell <- as.factor(gsub("_U\\d{1}", "", siteCovs$Cell_Unit))
+coords <- siteCovs |> 
+  sf::st_as_sf(coords = c("X", "Y"), crs = 4326) 
+
+## Subsample
+spsub <- spatialEco::subsample.distance(coords, size = 500, d = 1000)
+siteCovs <- spsub
+subARU <- as.numeric(rownames(siteCovs))
+
+## Break the data apart for demonstration purposes
+y <- occ.dat$y 
+obsCovs <- occ.dat$obsCovs
+
+## Subsampled sites
+y <- y[subARU,,]
+y.all <- y
+
+## Subsample the observation-level covariates
+obsCovs <- lapply(obsCovs, FUN = function(x) x[subARU,])
+
+## Confirm we have the right sites
+all(which(is.na(y[,,1])) == which(is.na(obsCovs$eff.hrs)))
+```
+For the rest of the tutorial on we will be looking at occupancy patterns and responses for the Mountain quail (*Oreortyx pictus*)![Mountain quail. Photo Credits: Steve Rottenborn/Macaulay Library](`r here::here("./Modules/Occ_Abunds/Figs/Quail_Image.jpg")`). Mountain quail are a montane species native to western North America inhabiting shrub-dominated ecosystems that cover a broad range in elevation. Despite being ubiquitously distributed throughout nearly every major mountain range in the western US they are a secretive species. Bioacoustics is a great way to get better estimates of this species habitat associations, distribution, and population dynamics! (see Brunk et al., 2023)   
+```{r Species selection}
+# Take one species since we are doing a single species model
+## Let's focus on Hermit warbler
+sp.ind <- which(dimnames(y)[[3]] == "Mountain Quail")
+y <- y[,,sp.ind]
+
+## Remove the spatial features of the siteCovs
+siteCovs <- sf::st_drop_geometry(siteCovs)
+all(rownames(y) == siteCovs$Cell_Unit)
+```
+We now have three subsetted objects that will be used for our occupancy models. Let's take a look!
+```{r}
+str(y)
+str(siteCovs)
+str(obsCovs)
+```
+Next, we package the data up in the format that `unmarked` uses with the function `unmarkedFrameOccu`. It's worth noting that `unmarked` has a variety of `unmarkedFrame` objects with various extensions meant to package data for the model you expect to run! For example, later on we will see how to package data for a false-positive occupancy model using `unmarkedFrameOccuFP` and for a multi-species occupancy model with `unmarkedFrameOccuComm`.
+```{r Make unmarked frame}
+## Package these elements into an unmarked object
+unmk <- unmarkedFrameOccu(y = y, siteCovs = siteCovs, obsCovs = obsCovs)
+class(unmk)
+summary(unmk)
+```
+We can inspect the output from the new unmarked dataframe.
+
+## Model Fitting
+Fitting an occupancy model with `unmarked` is quite easy. You can specify the fomula using the standard linear model syntax in R. Recall from our lecture the basic structure of the occupancy model is 
+$$
+State \space Process: z_{i} \sim Bernoulli(\psi)\\
+Observation \space Process: y_{ij}|z_i \sim Bernoulli(z_i * p_{ij})
+$$
+In the simplest case we define the model as an intercept only model such that detection and occupancy do not vary as a function of any covariates. We denote this in the following code as `~1 ~1`, where the first component is the detection model and the second is the occupancy component in `unmarked`.
+$$
+logit(\psi_i) = \beta_0\\
+logit(p_{ij}) = \alpha_0
+$$
+
+```{r Fit Model 1}
+## Start with the simplest possible model (i.e., a null model)
+fm1 <- occu(~1 ~1, data = unmk)
+```
+Next, we explore the results from this model fit `fm1`, what do you see?
+```{r}
+## Take a minute to look at these values...what do they mean?
+summary(fm1)
+```
+The output simply reflects the mean estimated occupancy and detection probabilities, respectively. It also provides the standard error, z-scores, and significance. It's important to note that these values on on the logit scale. To transform them to probability scale we can use the inverse logit transformation. Mathematically, this is expressed as $p = \frac{e^p}{1+e^p}$. We can get these transformed values using the `plogis` function in R. We can then plug these values into this function to get occupancy and detection probabilities.
+```{r Inspect Model 1}
+## We can manually back-transform from logit to probability scale
+## or using the plogis() function
+inv_logit <- function(x){
+  val <- (exp(x))/(1+exp(x))
+  return(val)
+}
+
+## For example...
+plogis(0.5) == inv_logit(0.5)
+
+## Occupancy probability for this species is...
+occ.p <- plogis(coef(fm1)[1])
+
+## Detection probability for this species is...
+det.p <- plogis(coef(fm1)[2]) 
+
+## Probs
+null.dat <- data.frame(DetProb = round(det.p, 2), 
+                       OccProb = round(occ.p, 2))
+
+## Table
+knitr::kable(null.dat,
+             col.names = c("Detection Prob.", "Occupancy Prob."))
+
+```
+For convenience, you can also use the predict function with `type = "state"` for occupancy and `type = "det"` for detection.
+```{r}
+## We can get these value transformed returned from unmarked itself with 95% CIs
+predict(fm1, type = "state")[1,]
+predict(fm1, type = "det")[1,]
+```
+
+## Adding complexity: Covariates for detection
+Next, we add in some further complexity but assuming that our probability of detecting a species depends on some survey-level covariates: the number of hours spent recording and the day the recordings were made on. This can be represented as $logit(p_{ij}) = \alpha_0 + \alpha_1 * Effort \space Hours_{ij} + \alpha_2 * Ordinal \space Date_{ij}$. As a note, we center and scale the predictors prior to model fitting for ease of interpretation. The interpretation of the intercept of the model for $p$ is now assuming $logit(p_{ij}) = \alpha_0 + \alpha_1 * 0 + \alpha_2 * 0$, such that the intercept is interpreted when all covariates are at their mean. Note: Because we `scaled` predictors internally we provide the `newdata` argument with data on the natural scale of the predictors rather than `scaled` values because `unmarked` handles the back-transformations internally for us.    
+```{r Fit Model 2: Detection Covs}
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Detection covariates
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+fm2 <- occu(~ scale(eff.hrs) + scale(eff.jday) ~1, data = unmk)
+
+## Before we were able to directly estimate backtransformed detection and
+## occupancy because they were not a function of covariates...now we have
+## to select some values since we have a detection model with covariates
+
+## occupancy - note we didn't use covariates in this part of the model!!
+predict(fm2, type = "state")[1,]
+
+## Let's see how detection responds to varying the ordinal date
+## Let's hold effort hours at the mean value
+eff.hrs.mean <- mean(obsCovs$eff.hrs, na.rm = T)
+
+## Next we vary ordinal date by 1 day across the range of the predictor
+eff.jday.seq <- seq(min(obsCovs$eff.jday, na.rm = T), max(obsCovs$eff.jday, na.rm = T), by = 1)
+
+## Bundle this up into a prediction df
+nd <- data.frame(eff.hrs = eff.hrs.mean, eff.jday = eff.jday.seq)
+
+## Predict detection probability as a function of this new data
+nd.pred <- round(predict(fm2, type = "det", newdata = nd, appendData = TRUE), 2)
+head(nd.pred)
+tail(nd.pred)
+
+## We can get confidence intervals for parameter estimates via confint
+confint(fm2, type = "det")
+```
+
+## Adding Complexity: Covariates for both detection and occupancy
+Next, we will build in some variables to model occupancy probability and keep our detection model structure from above.
+$$
+State \space Process: z_i \sim Bernoulli(\psi_i) \\
+logit(\psi_i) = \beta_0 + \beta_nX_n \\
+Observation \space Process: y_{ij}|z_i \sim Bernoulli(z_ip_{ij}) \\
+logit(p_{ij}) = alpha_0 + \alpha_NX_n
+$$ 
+For this example, we will examine the influence of elevation on species occupancy. The structure of the model is very similar to above but we have added in `scale(topo_elev)` to the state process piece of the formula. We can repeat the steps above to look at this new model.
+```{r Fit Model 3: Occ & Det Covs}
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Add some occupancy covariates
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+fm3 <- occu(~ scale(eff.hrs) + scale(eff.jday) ~ scale(topo_elev), data = unmk)
+print(fm3)
+## make a new dataframe holding while varying the occupancy covariate (elevation)
+nd <- data.frame(topo_elev = seq(min(siteCovs$topo_elev), max(siteCovs$topo_elev), 100))
+
+## Predict the state variable now
+round(predict(fm3, type = "state", newdata = nd, appendData = TRUE), 2)
+```
+Finally, we will fit an even more complex model with a set of occupancy and detection covariates. It's worth noting, for your own data `unmarked` can handle random effect structures using the traditional `lme4` mixed-effects model syntax (i.e., 1|effect for random intercept, eff1|eff2 for random slopes, etc.).
+```{r Fit Model 4}
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Even more realistic model
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+fm4 <- occu(~ scale(eff.hrs) + 
+              scale(eff.jday) + 
+              scale(I(eff.jday^2)) +
+              scale(cc_cfo_mn) + 
+              scale(topo_tpi) 
+            ~ scale(utmn) + 
+              scale(topo_elev) + 
+              scale(I(topo_elev^2)) +
+              scale(ch_cfo_mn), 
+            data = unmk)
+
+fm4
+```
+## Model Selection and Fit
+Now, we will explore some hypothesis testing and multi-model inference using occupancy models. This is a brief run-through for testing our four models fit above with varying complexity to see which of these models is a better fit for the data. To do so, we can package the models into an `unmarked` `fitList`. As a reminder we have four competing models of increasing complexity:
+$$ Model\space1: Null\space Model\\
+z_i \sim Bernoulli(\psi_i) \\
+y_{ij}|z_i \sim Bernoulli(z_ip_{ij}) \\
+Model\space2: Detection\space heterogeneity \\
+z_i \sim Bernoulli(\psi_i) \\
+y_{ij}|z_i \sim Bernoulli(z_ip_{ij}) \\
+logit(p_{ij}) = alpha_0 + \alpha_1 * Effort \space Hours_{ij} + alpha_3 * Ordinal \space Date_{ij} \\
+Model\space 3: Detection\space and\space Occupancy\space Simple \\
+z_i \sim Bernoulli(\psi_i) \\
+logit(\psi_i) = \beta_0 + \beta_1 * Elevation_i \\
+y_{ij}|z_i \sim Bernoulli(z_ip_{ij}) \\
+logit(p_{ij}) = alpha_0 + \alpha_1 * Effort \space Hours_{ij} + alpha_3 * Ordinal \space Date_{ij} \\
+Model\space 4: Detection\space and\space Occupancy\space Complex \\
+z_i \sim Bernoulli(\psi_i) \\
+logit(\psi_i) = \beta_0 + \beta_1 * Latitude_i + \beta_2 * Elevation_i + \beta_3 * Elevation_i^2 + \beta_4 * Canopy \space Height_i \\
+y_{ij}|z_i \sim Bernoulli(z_ip_{ij}) \\
+logit(p_{ij}) = alpha_0 + \alpha_1 * Effort \space Hours_{ij} + alpha_2 * Ordinal \space Date_{ij} + \alpha_3 * Ordinal \space Date_{ij}^2 + \alpha_4 * Canopy\space Cover_i + \alpha_5 * TPI_i
+$$
+
+```{r Model Selection}
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: Model Selection and Fit
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Unmarked fitList()
+fms <- fitList('psi(.)p(.)' = fm1, 
+               'psi(.)p(Hours+Date)' = fm2,
+               'psi(elevation)p(Hours+Date)' = fm3,
+               'psi(lat+ele^2+ch)p(Hours+Date^2+cc+tpi)' = fm4)
+modSel(fms)
+
+## What do you see? Which model is more appropriate?
+
+## Another approach is to use functionality from the aicmodAvg package
+## We will revist this later on
+aictab(cand.set = list(fm1, fm2, fm3, fm4),
+                       modnames = c("Null", "Det", "DetOcc Simple", "DetOcc Complex"))
+```
+
+## Model Fit and Validation
+It's important to note that while AIC helps us decide between the "best" competing models it does not measure the adequacy of model fit. Testing for model fit is somewhat challenging for binary response models but we can use different tests with strengths and weaknesses to try to see how well our estimated parameters recover observed data. Below we assess model fit with two different techniques: A chi-squared discrepancy test and a MacKenzie-Bailey Goodness-of-fit test. Below, I am highlighting an example, but in reality we would want to run the parameteric bootstrap many more times (e.g., 1000, 2000, etc.).
+```{r Model Fit}
+## To assess model fit we can use a Chi-square discrepancy test since our data is binary
+chisq <- function(fm){
+  umf <- fm@data
+  y <- umf@y
+  y[y>1] <- 1
+  fv <- fitted(fm)
+  sum((y-fv)^2/(fv*(1-fv)), na.rm=TRUE)
+}
+
+## Chi2 discrepancy test with 999 simulations
+## is the number of simulations in which our model Chi-square is
+## greater than the simulated data (> 0.05 is adequate model fit)
+pb <- suppressWarnings(parboot(fm4, statistic = chisq, nsim = 25, parallel = FALSE))
+
+## Print the output
+## Our results suggest failure to detection a significant difference between observed and simulated data...Pr(t_B > t0) > 0.05. 
+print(pb)
+
+## MacKenzie-Bailey GoF test (in reality you want to run many more iterations)
+## Now we use a slightly different model fit test
+## What could we do to improve the fit here? Maybe go back to the acoustics for some information?
+mbgof <- suppressWarnings(mb.gof.test(fm4, nsim = 10, print.table = T))
+print(mbgof)
+```
+We see that in both model validation fit statistics we achieve okay model support and we can proceed with model inference. But...we also notice that the c-hat is slightly higher than recommended. 
+
+### A quick note on potential overdispersion in occupancy models.
+```{r Overdispersion}
+## IF we detect over-dispersion...we can apply a correction for model selection using the code below
+## Adjust by overdispersion (c-hat)
+c_hat <- mbgof$c.hat.est
+
+## We can use the overdispersion parameter from our model to adjust model selection criteria
+## Note the c_hat argument taken from above
+aictab(cand.set = list(fm1, fm2, fm3, fm4), 
+       c.hat = c_hat)
+
+## We can use this to look at predictions with adjust SEs
+## We would want to proceed with the adjusted responses for the best-fitting model
+list(Unadj = summaryOD(fm4), 
+     Adj = summaryOD(fm4, c.hat = c_hat))
+
+```
+## Visualizations
+Below is code for plotting responses using output from our best-fitting model (Model 4) to visualize species occupancy and detection responses across predictors. We make use of two convenient functions from `unmarked`: `plotEffects` for quick visualizations and `plotEffectsData` to build some more customized plots. We will also use `unmarked`'s `predict` function with manually scaled covariates to exhibit how to go between scaled and original values on your marginal effects plots. 
+```{r Plotting}
+## -------------------------------------------------------------
+##
+## Begin Section: Visualizations
+##
+## -------------------------------------------------------------
+
+## Quick plotting via unmarked
+## Works nicely for linear effects
+suppressWarnings(plotEffects(fm4, "state", "ch_cfo_mn"))
+suppressWarnings(plotEffects(fm4, "det", "eff.hrs"))
+
+## We can customize plots by extracting data using plotEffectsData
+## You will likely see a warning about nested functions being
+## improperly scaled...you might prefer to do manual scaling
+## but as we see below the same plot is generated both ways
+plot.df <- plotEffectsData(fm4, "state", "topo_elev")
+
+ele.plot <- ggplot(data = plot.df, aes(x = covariateValue, y = Predicted)) + 
+  geom_line(size = 1, color = "red") +
+  geom_line(aes(x = covariateValue, y = upper), linetype = "dashed", color = "black") +
+  geom_line(aes(x = covariateValue, y = lower), linetype = "dashed", color = "black") +
+  geom_ribbon(aes(ymax = upper, ymin = lower), fill = "gray", alpha = 0.5) + 
+  theme_bw() + 
+  ylab(expression(psi)) + 
+  xlab("Elevation (masl)") + 
+  ggtitle("ME plot from 'unmarked'")
+  
+ele.plot
+
+## Example with manually scaled predictors to handle
+## quadratic relationships
+
+## Scale
+mean.hr <- mean(obsCovs$eff.hrs, na.rm = T)
+sd.hr <- sd(obsCovs$eff.hrs, na.rm = T)
+obsCovs$eff.hrs.sc <- (obsCovs$eff.hrs - mean.hr) / sd.hr
+
+mean.jday <- mean(obsCovs$eff.jday, na.rm = T)
+sd.jday <- sd(obsCovs$eff.jday, na.rm = T)
+obsCovs$eff.jday.sc <- (obsCovs$eff.jday - mean.jday) / sd.jday
+obsCovs$eff.jday2.sc <- obsCovs$eff.jday.sc^2
+
+mean.cc <- mean(siteCovs$cc_cfo_mn, na.rm = T)
+sd.cc <- sd(siteCovs$cc_cfo_mn, na.rm = T)
+siteCovs$cc_cfo_mn.sc <- (siteCovs$cc_cfo_mn - mean.cc) / sd.cc
+
+mean.tpi <- mean(siteCovs$topo_tpi, na.rm = T)
+sd.tpi <- sd(siteCovs$topo_tpi, na.rm = T)
+siteCovs$topo_tpi.sc <- (siteCovs$topo_tpi - mean.tpi) / sd.tpi
+
+## Can also use scale() function
+siteCovs$utmn.sc <- as.numeric(scale(siteCovs$utmn))
+siteCovs$topo_elev.sc <- as.numeric(scale(siteCovs$topo_elev))
+siteCovs$topo_elev2.sc <- siteCovs$topo_elev.sc^2
+siteCovs$ch_cfo_mn.sc <- as.numeric(scale(siteCovs$ch_cfo_mn))
+
+## Repackage data
+unmk2 <- unmarkedFrameOccu(y = y, siteCovs = siteCovs, obsCovs = obsCovs)
+
+## Fit the same model at fm4 with manually scaled covariates
+fm5 <- occu(~ eff.hrs.sc + 
+              eff.jday.sc + 
+              eff.jday2.sc +
+              cc_cfo_mn.sc + 
+              topo_tpi.sc 
+            ~ utmn.sc + 
+              topo_elev.sc + 
+              topo_elev2.sc +
+              ch_cfo_mn.sc, 
+            data = unmk2)
+
+## Do predictions by hand for elevational range
+ele_range <- seq(min(unmk2@siteCovs$topo_elev.sc, na.rm=TRUE), 
+                  max(unmk2@siteCovs$topo_elev.sc, na.rm=TRUE), 
+                  length.out = 100)
+
+## Make a new dataset to predict into
+newdata <- data.frame(
+  utmn.sc = mean(unmk2@siteCovs$utmn.sc, na.rm=TRUE),
+  topo_elev.sc = ele_range,
+  topo_elev2.sc = ele_range^2,
+  ch_cfo_mn.sc = mean(unmk@siteCovs$ch_cfo_mn.sc, na.rm=TRUE)
+  )
+
+## Predict occupancy
+pred_occ <- predict(fm5, type="state", newdata=newdata, appendData=TRUE)
+
+## Relationship on scaled units (x-axis)
+ele.p1 <- ggplot(pred_occ, aes(x = topo_elev.sc, y = Predicted)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  labs(x = "Scaled Elevation", y = expression(psi)) +
+  theme_bw() + 
+  ggtitle("Elevation scaled values")
+
+## Back-transform to original scale for plotting
+mean.ele <- mean(siteCovs$topo_elev)
+sd.ele <- sd(siteCovs$topo_elev)
+
+pred_occ$topo_elev.orig <- pred_occ$topo_elev.sc * sd.ele + mean.ele
+
+## Relationship on back-transformed (original) units
+ele.p2 <- ggplot(pred_occ, aes(x = topo_elev.orig, y = Predicted)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  labs(x = "Elevation (masl)", y = expression(psi)) +
+  theme_bw() + 
+  ggtitle("Elevation actual values")
+
+## Compare the plots for sanity
+ele.p1 | ele.p2 | ele.plot
+
+```
+
+## Adding Complexity: False-positive single-season, single-species (static) occupancy model
+Code below is for a false-positive flavor of occupancy model. Despite false-positive occupancy models being around for nearly 20 years they are still an active area of development. FP-models are also important for emerging bioacoustics pipelines with data derived from imperfect ML classifiers like (BirdNET) and detection thresholds. Given the rigidity of assumptions in standard occupancy models that there are zero FPs this extension is particularly relevant for all participants. However, these models are particularly tricky in lieu of extensive validation efforts and suffer from parameter identifiability issues. That is to say that it's impossible for us to distinguish between scenarios in which $p_{11}$ (species detection and occupancy) and $p_{10}$ (species detection but doesn't occupy; FP!) such that the model is multi-modal (Link and Royle, 2006). We can use some assumptions and numerical "tricks" to get the model to avoid sign switching but this is dependent on the species, acoustic quality, classifier performance, amount of validated data, and model structure. The models below correspond to a "Type 2" situation where we don't have explicitly validated data with the acoustic detections. "Type 3" can  improve parameter estimation and multi-modality by integrating "known" detections (e.g., expert listeners detect the species of interest). This data can then be integrated into the model as a multi-state model to help resolve the likelihood of an observation belonging to FP class vs TP class sensu Miller et al., (2013) and Clements et al, (2017). See Link and Royle (2006), Miller et al. (2013), Clement et al. (2017), and Rhinehart et al. (2023), Kery and Royle (2023; Chapter 7 Volume 2) for additional readings.
+
+```{r FP-Model}
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##
+## Subsection: False-positive models
+##
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Adding species richness as an indicator for potentially "noisy" environments
+## Can you think of other indicators to provide the model to help delineate
+## FPs? What might they be?
+rich <- occ.dat$y
+rich <- apply(rich, c(1,2), sum)
+rich <- rich[subARU,]
+
+## We assume all data can be impacted by FP
+type <- c(0,5,0)
+obsCovsFP <- list(eff.hrs = obsCovs$eff.hrs,
+                eff.jday = obsCovs$eff.jday,
+                rich = rich,
+                METH = y)
+unmk.fp <- unmarkedFrameOccuFP(y = y, siteCovs = siteCovs, obsCovs = obsCovsFP, type = type)
+class(unmk.fp)
+summary(unmk.fp)
+
+## We add starting values to try to avoid incorrect modality
+## We state that p11 >> p10 (i.e., FP should be quite small)
+largerp11_int <- qlogis(c(0.5, ## Occupancy prob 
+                      0.7, ## Detection prob
+                      0.1  ## FP
+                      ))
+largerp11 <- qlogis(c(0.5, 0.5, 0.5, 0.5, 0.5, #occupancy (int + covs) 
+                      0.7, 0.5, 0.5, 0.5, 0.5, #detection (int + covs)
+                      0.1, 0.5 #fp (int + covs)
+                      ))
+
+fm5 <- occuFP(detformula = ~1, 
+              stateformula = ~1,
+              FPformula = ~1,
+              data = unmk.fp,
+              starts = largerp11_int)
+
+fm6 <- occuFP(detformula = ~scale(eff.hrs) + scale(eff.jday) + scale(I(eff.jday^2)) + scale(cc_cfo_mn), 
+              stateformula = ~scale(utmn) + scale(topo_elev) + scale(I(topo_elev^2)) + scale(ch_cfo_mn),
+              FPformula = ~scale(rich),
+              data = unmk.fp,
+              starts = largerp11)
+
+fm6
+
+## False-positive rate confidence
+unmarked::confint(fm6, type = "fp")
+fp_coef <- plogis(coef(fm6))[grep("^fp", names(plogis(coef(fm6))))]
+
+## Quick Visualization
+plotEffects(fm6, type = "fp", covariate = "rich")
+
+```
+
+## Adding Complexity: Multi-species, static occupancy model
+Multi-species occupancy models (MSOMs) are a great tool for estimating imperfect detection-corrected estimates of communities and for downstream biodiversity analyses (see Iknayan et al., 2017; Jarzyna et al., 2018). Below is the code and set up for an MSOM across five species (for simplicity) in the Sierra Nevada: [Acorn Woodpecker](https://birdsoftheworld.org/bow/species/acowoo/cur/introduction), [Hermit Warbler](https://birdsoftheworld.org/bow/species/herwar/cur/introduction), [Golden-crowned Kinglet](https://birdsoftheworld.org/bow/species/gockin/cur/introduction), [Lazuli Bunting](https://birdsoftheworld.org/bow/species/lazbun/cur/introduction), and [Olive-sided Flycatcher](https://birdsoftheworld.org/bow/species/olsfly/cur/introduction). It is feasible to run five separate occupancy models across this assemblage by looping over each species individually but running species in a MSOM framework provides some advantages:
+
+1. Improved coefficient precision for rare species from information borrowing
+2. Propagation of errors in community-level estimates
+3. Potential for data augmentation to estimate latent meta-community (species never detected; e.g., Dorazio et al., 2005; Zipkin et al., 2010)
+
+Expanding our formulas above from a single-species static occupancy model to a multi-species static occupancy model with covariates looks like such:
+$$
+z_{ik} \sim Bernoulli(\psi_{ik}) \\
+y_{ijk} \sim Bernoulli(z_{ik} * p_{ijk}) \\
+logit(\psi_{ik}) = \beta_{0,k} + \beta_{1,ik} * X_{1,i} + \beta_{n,ik} * X_{n,i} \\
+logit(p_{ik}) = \alpha_{0,k} + \alpha_{1,ijk} * X_{1,ij} + \alpha_{n,ijk} * X_{n,ij} \\
+\beta_{0,k} \sim Normal(\mu_{\beta_0}, \sigma_{\beta_0}) \\
+\beta_{1,k} \sim Normal(\mu_{\beta_1}, \sigma_{\beta_1}) \\
+\beta_{n,k} \sim Normal(\mu_{\beta_n}, \sigma_{\beta_n}) \\
+\alpha_{0,k} \sim Normal(\mu_{\alpha_0}, \sigma_{\alpha_0}) \\
+\alpha_{1,k} \sim Normal(\mu_{\alpha_1}, \sigma_{\alpha_1}) \\
+\alpha_{n,k} \sim Normal(\mu_{\alpha_n}, \sigma_{\alpha_n}) \\
+$$
+The key difference is that species intercepts and slopes are expected to arise from a $Normal$ distribution. Thus, for rare species we can leverage this structure to "borrow" information from more common species such that these rare species tend to approach the mean values estimated for the community from the model above. This is commonly referred to as "information borrowing" or "partial pooling" and "Bayesian shrinkage" in a Bayesian context. From this model structure we can estimate individual species responses in detection and occupancy but also the average community-wide response.
+```{r MSOM}
+## -------------------------------------------------------------
+##
+## Begin Section: Single-season, multi-species version
+##
+## -------------------------------------------------------------
+
+## We call the observations of all 86 species from before
+dimnames(y.all)
+
+## We subset these to a few species
+spoi <- c("Acorn Woodpecker", 
+          "Hermit Warbler", 
+          "Golden-crowned Kinglet", 
+          "Lazuli Bunting", 
+          "Olive-sided Flycatcher")
+
+## Subset the 3-d array
+sp.ind <- which(dimnames(y.all)[[3]] %in% spoi)
+
+## Break the data apart for demonstration purposes
+y.msom <- y.all[,,sp.ind] # Take species of interest
+
+## y.msom is expected to be formatted M x J x S (Sites x Reps x Species)
+## We can use aperm to reorder
+#y.msom <- aperm(y.msom, c(2, 3, 1))
+
+## Package these elements into an unmarked object
+unmk.comm <- unmarkedFrameOccuComm(y = y.msom, siteCovs = siteCovs, obsCovs = obsCovs, speciesCovs = NULL)
+class(unmk.comm)
+
+## Let's test the same best fitting model from above
+fm7 <- occuComm(~ scale(eff.hrs) + scale(eff.jday) ~ scale(topo_elev), data = unmk.comm)
+
+## Inspect the model
+fm7
+
+## We can still do AIC model selection for the multi-species models
+## Add a polynomial term for the elevation in a slightly more complex model form
+fm8 <- occuComm(~ scale(eff.hrs) + scale(eff.jday) ~ scale(topo_elev) + scale(I(topo_elev^2)), data = unmk.comm)
+```
+We see that the only predictor that has a significant impact at the community scale is the number of effort hours that an ARU was active, this is accompanied by a very small estimated variance suggesting all species respond very similarly. Converesly, the community does not exhibit a consistent effect in response to elevation in the occupancy submodel or ordinal date in the detection model. However, this community-wide patterns can mask individual species responses. Let's look at this for elevation...
+
+We can extract the random effects (intercepts and slopes) from our MSOM in `unmarked` using the `randomTerms` argument.
+```{r MSOM Random Effects}
+## Look at species-specific random intercepts and slopes
+## These estimates are drawn from a normal distribution
+## with mean zero which tells you the deviation for each
+## species from the averagae
+rt <- randomTerms(fm8)
+rt
+
+## We can add in the "fixed" part of the model to get
+## a more complete picture using the argument
+## addMean = TRUE to show us the full response
+rtmean <- randomTerms(fm8, addMean = TRUE)
+rtmean
+
+## We can look at occupancy using the predict function
+## In this case we gave the model no newdata so it
+## predicts at each location conditional on the 
+## covariates there
+lapply(predict(fm8, type = "state"), head)
+
+## The mean occupancy across all sites for each species
+lapply(predict(fm8, type = "state"), function(x) mean(x$Predicted))
+
+## Detection
+lapply(predict(fm8, type = "det"), function(x) mean(x$Predicted, na.rm = T))
+
+```
+
+```{r MSOM Spaghetti Plots}
+## Make the manual range for the predictor
+ele_range <- range(siteCovs(unmk.comm)$topo_elev)
+ele_seq <- seq(ele_range[1], ele_range[2], length.out = 100)
+
+## Set the number of species
+nspec <- 5
+
+## Make a new df
+newdata <- data.frame(topo_elev = rep(ele_seq, nspec),
+                      species = rep(spoi,
+                                    each = 100))
+
+## Predict the modelled effects
+occ_msom <- suppressWarnings(predict(fm8, type = "state", newdata = newdata, appendData = T))
+
+## Plot the species-specific marginal effects layered
+ggplot(occ_msom, aes(x = topo_elev, y = Predicted, fill = species)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  scale_fill_viridis_d() + 
+  labs(x = "Elevation (masl)", y = expression(psi)) +
+  theme_bw() + 
+  ggtitle("MSOM Species Elevational Responses")
+```
+Model selection for MSOMs follow a similar strategy from what we saw above. Below is a function that estimates similar AIC model output from the `modSel` function provided by `unmarked`, which at the time of writing this tutorial doesn't handle model objects from community occupancy models. However, a more robust alternative would be to use `aictab` from the `aicmodAvg` package we used above. What are some other hypotheses we can test in a multi-species framework that might be interesting? 
+```{r MSOM Model Selection}
+fm7@AIC > fm8@AIC
+(fm7@AIC - fm8@AIC) > 4
+
+## We can extract the AICs and calculate AIC weights with something like this
+AICweight <- function(models){
+  if(is.null(names(models))){
+    mod_names <- paste("Model ", seq(1,length(models)))
+  } else {
+    mod_names <- names(models)
+  }
+  aics <- unlist(lapply(models, function(x) x@AIC))
+  minAIC <- min(aics)
+  delta.aic <- aics - minAIC
+  weight <- exp((-1 * delta.aic)/2) / sum(exp((-1 * delta.aic)/2))
+  weight <- data.frame(Model = mod_names, AIC = aics, DeltaAIC = delta.aic, AICweight = round(weight, 3))
+  rownames(weight) <- NULL
+  return(weight)
+}
+
+## Overall model selection - would be interesting to see if this is the case for individual species models too!
+AICweight(models = list("Elev" = fm7, "Elev Sq" = fm8))
+
+## Alternative way for model selection
+aictab(cand.set = list(fm7,
+                       fm8),
+       modnames = c("Ele Lin", "Ele Poly"))
+```
+
+
+```{r Richness Estimates}
+# ## Compare Naive to Estimated
+# ## We can see some of the issues with diversity estimates
+# ## without accounting for imperfect detection...
+# ## Some sites have lower observed richness than expected!
+# ## This problem might become more extreme with more species
+# ## and rare species
+# ## We can get richness values from this model
+r <- richness(fm8, posterior = T) ## posterior = T gets us uncertainty
+est <- apply(r@samples, 1, mean)
+low <- apply(r@samples, 1, quantile, 0.025)
+high <- apply(r@samples, 1, quantile, 0.975)
+
+
+naive.rich <- apply(apply(y.msom, c(1,3), function(x) if(all(is.na(x))) return(NA) else return(max(x, na.rm = T))), 1, sum, na.rm = T)
+
+rich.df <- data.frame(Naive = naive.rich, Estimated = est, Low = low, High = high)
+
+ggplot(data = rich.df, aes(x = Naive, y = Estimated)) + 
+  geom_point(alpha = 0.3) + 
+  geom_linerange(aes(ymin = Low, ymax = High)) + 
+  geom_abline(slope = 1, intercept = 0) +
+  theme_bw() + 
+  ylab("Estimated Richness") + 
+  xlab("Naive Richness")
+
+```
+
+```{r Extracting the z-matrix}
+re <- ranef(fm8)
+z_mat <- lapply(re, function(x) bup(x, stat = "mode"))
+
+## Z-mat back to community mat
+## Now you have a detection-corrected community and
+## you can perform a number of community-based analyses
+z_arr <- abind::abind(z_mat, along = 2)
+head(z_arr)
+```
