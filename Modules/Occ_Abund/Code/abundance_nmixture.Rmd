@@ -1,0 +1,198 @@
+---
+title: "IISER Advanced Bioacoustics Workshop - Estimating abundance of unmarked animals from paired acoustic and count data"
+author: "Meghan A. Beatty"
+date: "February 2026"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Code purpose
+
+There are a variety of methods to estimate abundance and/or density from acoustic data. Here, we are going to use data from simulated, spatially replicated, paired acoustic and human observer count surveys to estimate abundance. We have three goals:
+
+1.  Calculate species vocal activity rate (VAR) (e.g., \# detections per sampling occasion) from simulated acoustic data.
+
+2.  Estimate abundance from simulated count data of unmarked animals using N-mixture models.
+
+3.  Relate VAR to estimated species abundance to calculate an acoustically-derived index of abundance. We will also compare how this relationship compares to using raw count data.
+
+## 1) Calculate species vocal activity rate
+
+In a real-world use case, we would use summarized acoustic detections (e.g., from a BirdNET output) to calculate different measures of VAR. Example measures of VAR could include, but are not limited to:
+
+-   \# detections per sampling occasion
+
+-   time to first to detection per sampling occasion
+
+-   time between first and last detection per sampling occasion
+
+For simplicity, we will simulate detections per sampling occasion for an imaginary species. A sampling occasion could vary greatly depending on your species and study design. For example, if ARUs are paired with an avian point count study, you may calculate the number of songs detected within a 10-minute interval. If your ARU's are paired with counts of elephants, it may be the number of bugles detected over the course of an hour. We make an assumption that if no individuals were present, no detections would be recorded (i.e., no false positives).
+
+```{r simulate VAR}
+
+#set seed to ensure we get the same values
+set.seed(123)
+
+#define expected (mean) number of acoustic detections per site and sampling occasion 
+means <- rep(c(0,5,10,15,20),10)
+means
+
+#create a site by visit dataframe to fill with a detection history
+VAR <- matrix(NA, nrow = 50, ncol = 10)
+
+#simulate detections per sampling occasion based on the expected value assigned above
+for (i in 1:nrow(VAR)) {
+    tmp <- rpois(ncol(VAR), lambda = means[i])
+    VAR[i, ] <- tmp[1:ncol(VAR)]
+  }
+VAR <- as.data.frame(VAR)
+
+#calculate mean detections per site
+VAR.mean <- rowMeans(VAR); VAR.mean
+
+```
+
+## 2) Estimate abundance using count data and N-mixture models
+
+In a real-world use case, we would use data collected in human observer count surveys that were paired with ARUs. Here, we will simulate count data that meets our expectation that VAR increases with increasing abundance.
+
+```{r simulate counts}
+
+#define number of sites and number of sampling occasions to match the VAR data
+nSites <- 50
+nOcc   <- 10
+
+# define true abundance 
+  # in this we case we assume the number of animals vary between 0 and 4 per site;
+  # thus, our simulated VAR data reflects that an animal calls 5x per sampling occasion (e.g., 4 animals x 5 calls = 20 calls total)
+N <- rep(c(0:4),10) 
+
+# define true detection
+p <- 0.3                
+
+#create dataframe for observed counts
+y <- matrix(NA, nSites, nOcc) 
+
+#simulate observed counts with imperfect detection
+for(i in 1:nSites){
+  y[i, ] <- rbinom(nOcc, N[i], p) 
+}
+
+head(y)
+
+```
+
+Next we will take our simulated observed counts and estimate abundance at each site using an N-mixture model in the 'unmarked' package, incorporating imperfect detection of individuals at each site.
+
+```{r estimate abundance}
+
+library(unmarked)
+
+#define site names
+sites <- paste0("site", 1:50)
+
+#create the unmarked object
+umf <- unmarkedFramePCount(y = y, siteCovs = data.frame(sites=as.factor(sites)))
+
+#run the unmarked model
+model1 <- pcount(~1 ~1, umf, K = 100)
+model1
+
+#check we are close to our defined 'p'
+plogis(coef(model1, type="det")) 
+
+#empirical Bayes estimation of random effects
+model1re <- ranef(model1); model1re
+#extract the mean estimated abundance per site
+pred <- data.frame(abund.est = bup(model1re, state = "mean")) 
+#estimated summed abundance across sites
+sum(bup(model1re))    
+#actual summed abundance across sites
+sum(N)                     
+
+#round estimated abundance to integer for use below
+pred$abund.est <- round(pred$abund.est, 0)
+
+
+```
+
+## 3) Relate estimated species abundance and raw count data to vocal activity rate
+
+We will fit generalized linear models with a Poisson distribution because we are using count data. However, other distributions may be needed depending on the behavior of your data (e.g., a negative binomial or zero-inflated Poisson). We use estimated abundance and maximum observed counts as the response variables and VAR as the predictor.
+
+```{r glm}
+
+#add the maximum raw count per site (i.e., naive abundance) to the prediction dataframe
+pred$max.count <- apply(y, 1, max)
+
+#add mean VAR per site to the prediction dataframe
+pred$VAR <- VAR.mean
+
+#look at correlations between counts and VAR
+cor(pred[, c("VAR", "abund.est", "max.count")])
+
+#relate estimated abundance to VAR 
+m.abund <- glm(abund.est ~ VAR, family = poisson, data = pred)
+summary(m.abund)
+
+#relate maximum observed count to VAR 
+m.count <- glm(max.count ~ VAR, family = poisson, data = pred)
+summary(m.count)
+
+```
+
+Let's compare the results on a plot.
+
+```{r plot}
+
+#create data for predictions
+newdata <- as.data.frame(pred)
+
+#predict abundance
+abund.pred <- predict(m.abund, newdata = newdata, type = "response", se.fit = TRUE)
+# 95% CI
+abund.pred <- data.frame(
+  fit   = abund.pred$fit,
+  se    = abund.pred$se.fit,
+  lower = abund.pred$fit - 1.96 * abund.pred$se.fit,
+  upper = abund.pred$fit + 1.96 * abund.pred$se.fit
+  )
+#format data for plotting
+abund.pred$type <- "abund"
+abund.pred$abund <- N
+abund.pred$VAR <- newdata$VAR
+
+#predict observed counts
+count.pred <- predict(m.count, newdata = newdata, type = "response", se.fit = TRUE)
+# 95% CI
+count.pred <- data.frame(
+  fit   = count.pred$fit,
+  se    = count.pred$se.fit,
+  lower = count.pred$fit - 1.96 * count.pred$se.fit,
+  upper = count.pred$fit + 1.96 * count.pred$se.fit
+  )
+#format data for plotting
+count.pred$type <- "count"
+count.pred$abund <- N
+count.pred$VAR <- newdata$VAR
+
+#combine dataframes for plotting
+plot <- rbind(abund.pred, count.pred)
+
+#plot results
+library(ggplot2)
+ggplot(plot) +
+  geom_line(aes(x = VAR, y = fit, color = type))  + 
+  geom_point(aes(x = VAR, y = abund)) +
+  geom_ribbon(aes(x = VAR, ymin = lower, ymax = upper, fill = type), alpha = 0.1) +
+  #facet_wrap(~type) + #to make each plot in it's own pane
+  ylab("abundance") + xlab("vocal activity rate") +
+  theme_classic()
+
+
+```
+
+Was VAR a better predictor for estimated abundance or the maximum observed counts? How does this change as we change our detection probability (p) defined above?

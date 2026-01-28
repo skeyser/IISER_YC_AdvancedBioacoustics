@@ -1,7 +1,7 @@
 ---
 title: "BirdNET thresholding for detection data"
 output: html_document
-date: "2026-01-14"
+date: "February 2026"
 ---
 
 ```{r setup, include=FALSE}
@@ -26,17 +26,9 @@ We use logistic regression to create probabilistic BirdNET score thresholds for 
 
 ## 1) Manually validate BirdNET predictions
 
-Randomly select samples from the BirdNET output and manually validate whether BirdNET correctly identified the species. For example, you may generate 100 samples from confidence scores ranging from 0.1 to 1.0 and 100 samples from confidence scores ranging from 0.95 to 1.0. That is what we have done here for the Phainopepla (phai) bird dataset. More or less samples may be needed to encompass the full variation in any given dataset. You could also set a lower bound than 0.95 (e.g., 0.90) for the higher-confidence samples.
+Randomly select samples from the BirdNET output and manually validate whether BirdNET correctly identified the species. For example, you may generate 100 samples from confidence scores ranging from 0.1 to 1.0 and 100 samples from confidence scores ranging from 0.95 to 1.0. That is what we have done here for the Phainopepla (phai) bird dataset. More or fewer samples may be needed to encompass the full variation in any given dataset. You could also set a lower bound than 0.95 (e.g., 0.90) for the higher-confidence samples.
 
 ## 2) Read the validation results into R
-
-*Data column descriptions:*
-
-**full_id** = the audio clip
-
-**confidence** = a unitless, numeric expression of BirdNET’s “confidence” in its prediction, scaled to the range [0–1]
-
-**correct** = whether the audio clip was correct n identifying the species (1) or was incorrect (0), by manual validation
 
 ```{r data}
 #read data
@@ -48,6 +40,14 @@ head(data)
 range(data$logit)
 range(data$confidence)
 ```
+
+*Data column descriptions:*
+
+**full_id** = the audio clip
+
+**confidence** = a unitless, numeric expression of BirdNET’s “confidence” in its prediction, scaled to the range [0–1]
+
+**correct** = whether the audio clip was correct n identifying the species (1) or was incorrect (0), by manual validation
 
 ## 2) Fit logistic regression models
 
@@ -73,14 +73,14 @@ It can be helpful to visualize the logistic curve and the results. We can solve 
 The thresholds are the core output of this whole process. They tell you what BirdNET score (confidence or logit) yields a given probability of achieving a correct prediction.
 
 ```{r thresholds}
-  #generate a prediciton range from the min and max confidence score
+  #generate a prediction range from the min and max confidence score
   prediction.range.conf=seq(0,1,.001) 
-  #generate a prediciton range from the min and max logit score
+  #generate a prediction range from the min and max logit score
   prediction.range.logit=seq(-3,7,.1) 
   
   #predict whether a species detection is correct based on the confidence model
   predictions.conf=predict(conf.model, list(confidence=prediction.range.conf), type='r')
-    #predict whether a species detection is correct based on the logit model
+  #predict whether a species detection is correct based on the logit model
   predictions.logit=predict(logit.model, list(logit=prediction.range.logit), type='r')
   
   # solve for the desired thresholds for pr(true positive): .90, 0.95, and 0.99
@@ -88,16 +88,16 @@ The thresholds are the core output of this whole process. They tell you what Bir
   #confidence score model
   c.intercept = conf.model$coefficients[1]
   c.beta = conf.model$coefficients[2]
-  cutoff90.c=(log(.90/(1-.90))-c.intercept)/c.beta
-  cutoff95.c=(log(.95/(1-.95))-c.intercept)/c.beta
-  cutoff99.c=(log(.99/(1-.99))-c.intercept)/c.beta
+  cutoff90.c=(log(.90/(1-.90))-c.intercept)/c.beta; cutoff90.c
+  cutoff95.c=(log(.95/(1-.95))-c.intercept)/c.beta; cutoff95.c
+  cutoff99.c=(log(.99/(1-.99))-c.intercept)/c.beta; cutoff99.c
   
   #logit model
   l.intercept = logit.model$coefficients[1]
   l.beta = logit.model$coefficients[2]
-  cutoff90.l=(log(.90/(1-.90))-l.intercept)/l.beta
-  cutoff95.l=(log(.95/(1-.95))-l.intercept)/l.beta
-  cutoff99.l=(log(.99/(1-.99))-l.intercept)/l.beta
+  cutoff90.l=(log(.90/(1-.90))-l.intercept)/l.beta; cutoff90.l
+  cutoff95.l=(log(.95/(1-.95))-l.intercept)/l.beta; cutoff95.l
+  cutoff99.l=(log(.99/(1-.99))-l.intercept)/l.beta; cutoff99.l
 
 ```
 
@@ -130,7 +130,7 @@ Now we plot our results.
 
 In this case the logit scores performed better based on AIC model selection. Assuming that we use the logit score model, we now have three threshold values to pick from for creating a detection history with a 90%, 95%, or 99%, probability a detection is a true positive.
 
-To decide which threshold to use can depend on whether it is more important in your study to include as many true positives as possible (i.e., high recall) or to strictly ensure few false positives are included (i.e., high precision). Identifying how many observations are removed under each threshold and how many false positives may be included can be a useful way to determine which threshold you want to use. For example.
+To decide which threshold to use can depend on whether it is more important in your study to include as many true positives as possible (i.e., high recall) or to strictly ensure few false positives are included (i.e., high precision). Identifying how many true positives may be removed and how many false positives may be included under each threshold can be a useful way to determine which threshold you want to use.
 
 ```{r choosing threshold}
 
@@ -141,6 +141,7 @@ data$include.90 <- ifelse(data$logit < cutoff90.l & data$correct == 0, "tn", dat
 data$include.90 <- ifelse(data$logit >= cutoff90.l & data$correct == 0, "fp", data$include.90)
 r.90 <- sum(data$include.90 == "tp")/sum(data$include.90 == "tp" | data$include.90 == "fn")
 p.90 <- sum(data$include.90 == "tp")/sum(data$include.90 == "tp" | data$include.90 == "fp")
+#summary of FP, FN, TN, TP with 90% threshold
 table(data$include.90, useNA = "ifany")
 
 
@@ -151,6 +152,7 @@ data$include.95 <- ifelse(data$logit < cutoff95.l & data$correct == 0, "tn", dat
 data$include.95 <- ifelse(data$logit >= cutoff95.l & data$correct == 0, "fp", data$include.95)
 r.95 <- sum(data$include.95 == "tp")/sum(data$include.95 == "tp" | data$include.95 == "fn")
 p.95 <- sum(data$include.95 == "tp")/sum(data$include.95 == "tp" | data$include.95 == "fp")
+#summary of FP, FN, TN, TP with 95% threshold
 table(data$include.95, useNA = "ifany")
 
 
@@ -160,6 +162,7 @@ data$include.99 <- ifelse(data$logit < cutoff99.l & data$correct == 0, "tn", dat
 data$include.99 <- ifelse(data$logit >= cutoff99.l & data$correct == 0, "fp", data$include.99)
 r.99 <- sum(data$include.99 == "tp")/sum(data$include.99 == "tp" | data$include.99 == "fn")
 p.99 <- sum(data$include.99 == "tp")/sum(data$include.99 == "tp" | data$include.99 == "fp")
+#summary of FP, FN, TN, TP with 99% threshold
 table(data$include.99, useNA = "ifany")
 
 
@@ -178,18 +181,20 @@ summary
 
 From this we can see that, for this validation dataset, all thresholds resulted in equal precision: no false positives were included. In terms of recall, there was greater variability. With a 99% threshold, 31% of true positives would be removed. That may not be a big deal if detections are common, but it is worth considering in your choice of threshold.
 
-You might also want to check how different thresholds affect the number of sites that have detections or not. Ideally, the thresholds will produce the same number of sites where detections occurred. 
+You might also want to check how different thresholds affect the number of sites that have detections or not. Ideally, the thresholds will produce the same number of sites where an animal was detected at least once.
 
 ## 5) Creating a detection history
 
-Let us assume we choose a 90% threshold. We would then subset the full BirdNET output to include only detections that meet or exceed the threshold value and create a visit-by-site detection history. For the purpose of this tutorial we will pretend the validation dataset is the full output 
+Let us assume we choose a 90% threshold. We would then subset the full BirdNET output to include only detections that meet or exceed the threshold value and create a site-by-visit detection history. For the purpose of this tutorial we will pretend the validation dataset is the full output
 
 ```{r create detection history}
 
-#subset the data (this would be the full BirdNET output, not just the validation data)
+#subset the data by the selected threshold 
+  #NOTE: this would be the full BirdNET output, not just the validation data
 data.90 <- subset(data, logit >= cutoff90.l)
 
-#extract the site name (this is unique to these file names, you will have to adjust for your own file names)
+#extract the site name 
+  #NOTE: this is unique to these file names, you will have to adjust for your own file names
 data.90$site <- regmatches(
   data.90$full_id,
   regexpr("G.{3}", data.90$full_id)
@@ -218,13 +223,15 @@ data.occu[is.na(data.occu)] <- 0
 #NOTE: This assumes that ARUs were running over all recording days across all sites
   #if ARUs were not recording on a given day and site, those days need to coded as NA not zero
 
+head(data.occu)
+
 ```
 
 The next step, not shown here, would be to include all of the sites where no detections occurred and add them to the detection history produced above.
 
 ## Bonus: multispecies loop
 
-If you have validated predictions for many species, probabilistic thresholds can be generated in bulk via a loop. This is a simple extension of the single-species example above. First, read in all the species-specific .csv files containing the validation results and create some basic objects that will be used for each species. This loop assumes that each species’ validation file is formatted identically to the one provided in the example above.
+If you have validated predictions for many species, probabilistic thresholds can be generated in bulk via a loop. This is a simple extension of the single-species example above. First, read in all the species-specific .csv files containing the validation results and create some basic objects that will be used for each species. This loop assumes that each species’ validation file is formatted identically to the one provided in the example above. Here, we run the loop for the Phainopepla dataset and one additional species (pija_validation.csv, Pinyon Jays).
 
 ```{r multispecies data}
   #fill in filepath below (uses current working directory in this case)

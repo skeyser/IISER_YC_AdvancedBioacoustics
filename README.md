@@ -47,3 +47,23 @@ If a vocalization is heard across multiple recording units, it may be possible t
 Robust estimates of species geographic distributions, habitat associations, abundances, and population trajectories are critical to basic and applied ecology and conservation. However, many animals are cryptic, rare, and otherwise difficult to detect such that our own observation process is imperfect. Occupancy models provide a robust, hierarchical modelling framework that explicitly accounts for the imperfect observation process by leveraging repeated surveys, which bioacoustic survey methods are optimized for. 
 Similarly, the occupancy modelling framework can be adapted to integrate continuous data on species counts providing a natural extension to estimating abundance that is critical for conservation decision making. In this module, we will explore the fundamentals of occupancy modelling from theory to application, provide hands-on practice for running basic occupancy models (i.e., single-species, single-season) in R, 
 and provide examples of extensions to relax assumptions of the basic occupancy model case to explore advanced applications (e.g., multi-species occupancy models; dynamic occupancy models). Next, we will focus on extending concepts from species detection/non-detection data to species count data for estimating abundance after accounting for imperfect detection, or so-called N-mixture models. We will focus on data derived from bioacoustic surveys and facilitate group discussions on the benefits, limitations, and applications of bioacoustic data in the context of occupancy and abundance modelling. 
+
+## Software Installations
+
+The following programs are used in the demos and hands-on sections of the various workshop modules. Workshop participants should download and install these prior to the beginning of the workshop.
+
+### BirdNET Analyzer
+BirdNET Analyzer is a GUI for processing audio data, with functionality including supervised deep learning detection/classification using the BirdNET model, custom model development using BirdNET as a foundation, detection review and classifier performance evaluation, etc. BirdNET and BirdNET Analyzer are developed and maintained by the K. Lisa Yang Center for Conservation Bioacoustics at Cornell University, and Chemnitz University of Technology.
+  1. Download BirdNET Analyzer v2.4.0 installer from the [BirdNET GitHub repository releases page](https://github.com/birdnet-team/BirdNET-Analyzer/releases/tag/v2.4.0)
+  2. Double click the downloaded installer file to run it; you may need to tell your computer that it is safe to run. Click **More info** and **Run anyway**.
+  3. Accept the license agreement and click **Next**. Check the box to create a desktop shortcut and click **Next**. Click **Install**.
+
+### Raven Annotate (optional)
+Raven Annotate is a new [Raven Workbench](https://www.birds.cornell.edu/ccb/raven-pro/) module that provides functionality for loading and visualizing raw sound files and annotating acoustic events. It is developed and maintained by the K. Lisa Yang Center for Conservation Bioacoustics at Cornell University.
+  1. Use one of the following links to download the appropriate Raven Annotate installer, according to your operating system:  
+    Windows: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/win_x64/Raven-Annotate-1.0.2.exe  
+    MacOS: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/mac_arm64/Raven-Annotate-1.0.2.dmg  
+    Linux: https://updates.ravensoundsoftware.com/updates/workbench/raven_annotate/linux_x64/raven-annotate_1.0.2-1_amd64.deb  
+  2. Locate the installer in your **Downloads** folder and double click to run.
+  3. Follow the prompts to complete installation by accepting the license agreement and clicking **Install**.
+
