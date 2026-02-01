@@ -1,7 +1,13 @@
-# Script to compare ground truth selection tables against detector output selection tables and
+# Script to compare ground truth selection tables against detector output selection tables to
 # compute various detector performance evaluation metrics
 # Note: Assumes ground truth selection tables & prediction selection tables each correspond to a single audio file and
 # that the selection table file names contain the corresponding audio file name
+
+library(stringr)
+library(warbleR)
+library(tuneR)
+library(ggplot2)
+library(pracma)
 
 # Settings -------------------
 # Path to ground truth selection tables
@@ -9,9 +15,9 @@ anotDir = 'C:/Users/rec297/Documents/GitHub/IISER_YC_AdvancedBioacoustics/Module
 # name of column containing ground truth labels
 labCol = 'Species' 
 # Path to detector output selection tables
-detDir = 'C:/Users/rec297/Documents/GitHub/IISER_YC_AdvancedBioacoustics/Modules/DetClass_ML/Data/DefaultModel/TerrestrialPredictions'
+detDir = 'C:/Users/rec297/Documents/GitHub/IISER_YC_AdvancedBioacoustics/Modules/DetClass_ML/Data/DefaultModel/Terrestrial/Predictions'
 # name of column containing detection labels
-detCol = "Species Code" 
+detCol = "Common Name" 
 # Path to audio files
 audioDir = 'C:/Users/rec297/Documents/GitHub/IISER_YC_AdvancedBioacoustics/Modules/DetClass_ML/Data/Testing/AudioFiles/Terrestrial'
 # File extension of audio files
@@ -19,7 +25,9 @@ fileExt = '.wav'
 # Search nested directories for audio files?
 recur = TRUE
 # Path to save performance metrics & plots
-saveDir = 'C:/Users/rec297/Documents/GitHub/IISER_YC_AdvancedBioacoustics/Modules/DetClass_ML/Data/DefaultModel'
+saveDir = 'C:/Users/rec297/Documents/GitHub/IISER_YC_AdvancedBioacoustics/Modules/DetClass_ML/Data/DefaultModel/Terrestrial'
+# provide class mapping if labels in annotations and predictions don't match; list(c(annotation label, prediction label))
+classMap = list()
 
 # duration of detector bins (s); if -1, will estimate detector bin size from detector output
 binSize = -1
@@ -29,11 +37,6 @@ minO = 0.5
 chans = 1 
 
 # Calculations ------------------------- 
-library(stringr)
-library(warbleR)
-library(tuneR)
-library(ggplot2)
-library(pracma)
 
 annotation_files <- dir(anotDir,pattern='.txt')
 detection_files <- list.files(detDir, pattern = ".txt")
@@ -55,7 +58,7 @@ for (i in 1:length(audio_files)) { # step through each audio file and evaluate T
   
   if (!isempty(matchingAnnots)){
     file_annotation <- paste(anotDir, annotation_files[matchingAnnots], sep = "/")
-    annotations <-   read.table(file_annotation, header = TRUE, sep = "\t",check.names = FALSE)
+    annotations <-   read.table(file_annotation, header = TRUE, sep = "\t",check.names = FALSE,quote="",fill=TRUE)
     
     if (dim(annotations)[1]>0){
       # If two views are present in the selection tables, remove annotation type 'waveform'
@@ -77,7 +80,7 @@ for (i in 1:length(audio_files)) { # step through each audio file and evaluate T
   if (!isempty(matchingDets)){
     # Load detections
     file_detec <-  paste(detDir,detection_files[matchingDets],sep = "/")
-    detections <- read.table(file_detec, header = TRUE, sep = "\t",check.names = FALSE)
+    detections <- read.table(file_detec, header = TRUE, sep = "\t",check.names = FALSE,quote="",fill=TRUE)
     
     if (dim(detections)[1]>0){
       # If two views are present in the selection tables, remove annotation type 'waveform'
@@ -115,7 +118,7 @@ for (i in 1:length(audio_files)) { # step through each audio file and evaluate T
   allTimeBins = c(allTimeBins,timeBins)
   
   # Trim any annotations that exceed the last time bin 
-  # (there may be a tiny bit of data at the end of the file which is not seen by the detector because it's not long enough to be a full spectrogram)
+  # (there may be a tiny bit of data at the end of the file which is not seen by the detector because it's not long enough to be a full time bin)
   tooLong = which(annotations$"End Time (s)">timeBins[length(timeBins)])
   annotations$"End Time (s)"[tooLong] = timeBins[length(timeBins)]
   
@@ -132,7 +135,9 @@ for (i in 1:length(audio_files)) { # step through each audio file and evaluate T
     temp1$File=audio_files[i]
     temp1$Channel=j
     temp1$ALabel=NA
+    #temp1$Abin = NA
     temp1$DLabel=NA
+    #temp1$Dbin=NA
     temp1$DScore=NA
     
     anInd = which(annotations$Channel==allChans[j])
@@ -153,8 +158,11 @@ for (i in 1:length(audio_files)) { # step through each audio file and evaluate T
           }
         }
         names(Alabels) = seq_along(Alabels)
+        #bins = rep(k,length(Alabels))
+        #names(bins) = seq_along(bins)
         if (length(Alabels)>0){
           temp1[k,'ALabel'][[1]] = list(Alabels)
+          #temp1[k,'Abin'][[1]] = list(bins)
         }
       }
       
@@ -167,10 +175,13 @@ for (i in 1:length(audio_files)) { # step through each audio file and evaluate T
           Dlabels = c(Dlabels,detections[detInd[whichDetInds[l]],detCol])
           Dscores = c(Dscores,detections$Score[detInd[whichDetInds[l]]])
         }
+        #bins = rep(k,length(Dlabels))
+        #names(bins) = seq_along(bins)
         names(Dlabels) = seq_along(Dlabels)
         names(Dscores) = seq_along(Dscores)
         
         temp1[k,'DLabel'][[1]]= list(Dlabels)
+        #temp1[k,'Dbin'][[1]] = list(bins)
         temp1[k,'DScore'][[1]] = list(Dscores)
       }
       
@@ -193,15 +204,21 @@ for (i in 1:length(audio_files)) { # step through each audio file and evaluate T
 
 # Tally TP/FP/TN/FN across all classes and compute performance metrics
 thresh = c(0.1,0.15,0.25,0.5,0.65,0.7,0.75,0.8,0.85,0.9,0.925,0.95,0.97,0.98,0.99)
-metMat = matrix(nrow=length(thresh),ncol=11)
-colnames(metMat) = c("Thresh",'nCalls','nTP','nFP','nTN','nFN','A','P','R','F1','FPR')
 
 allALabels = stack(setNames(allData$ALabel,seq_along(allData$ALabel)))[2:1]
+#ind = stack(setNames(allData$Abin,seq_along(allData$Abin)))[2]
+#allALabels[,1] = ind
 names(allALabels) = c('Index','Label')
 
 allALabels = allALabels[!is.na(allALabels$Label),]
 rownames(allALabels) = seq(length=dim(allALabels)[1])
 allALabels$Index = as.numeric(allALabels$Index)
+
+if (length(classMap)>0){
+for (i in 1:length(classMap)){
+  ind = str_which(allALabels$Label,classMap[[i]][1])
+  allALabels$Label[ind] = classMap[[i]][2]
+}}
 
 allDLabels = stack(setNames(allData$DLabel,seq_along(allData$DLabel)))[2:1]
 allDLabels[,3] = unlist(allData$DScore)
@@ -216,6 +233,8 @@ allLabels = unlist(unique(c(allALabels$Label,allDLabels$Label)))
 
 for (i in 1:length(allLabels)){
   
+  metMat = matrix(nrow=length(thresh),ncol=11)
+  colnames(metMat) = c("Thresh",'nCalls','nTP','nFP','nTN','nFN','A','P','R','F1','FPR')
   metMat[,2] = length(which(allALabels$Label==allLabels[i]))
   
   for (j in 1:length(thresh)){
@@ -249,7 +268,7 @@ for (i in 1:length(allLabels)){
   
   metMat = as.data.frame(metMat)
   metMat$Thresh = thresh
-  write.table(metMat,paste(saveDir,'/PerformanceMetrics_',str_remove(allLabels[i],' '),'.txt',sep=""))
+  write.table(metMat,paste(saveDir,'/PerformanceMetrics_',str_remove(allLabels[i],' '),'.txt',sep=""),sep="\t",row.names=FALSE)
   cat(paste('Label: ',allLabels[i],
             '\nAccuracy: ',as.character(min(metMat$A,na.rm=TRUE)*100),'-',as.character(max(metMat$A,na.rm=TRUE)*100),
             '\nPrecision: ',as.character(min(metMat$P,na.rm=TRUE)*100),'-',as.character(max(metMat$P,na.rm=TRUE)*100),
@@ -257,50 +276,49 @@ for (i in 1:length(allLabels)){
             '\nF1: ',as.character(min(metMat$F1,na.rm=TRUE)*100),'-',as.character(max(metMat$F1,na.rm=TRUE)*100),
             '\nFPR: ',as.character(min(metMat$FPR,na.rm=TRUE)*100),'-',as.character(max(metMat$FPR,na.rm=TRUE)*100),'\n',sep=""))
   
+  ## Plot performance curves
+  # PR curve vs confidence score
+  ggplot(metMat,aes(label=Thresh))+
+    geom_point(aes(x=R,y=P))+
+    geom_path(aes(x=R,y=P))+
+    geom_text(aes(x=R,y=P),hjust = 0, nudge_x = 0.0005)+
+    coord_cartesian(xlim=c(0,1),ylim=c(0,1))+
+    labs(title=paste('PR Curve, Min Overlap = ',minO*100,'%',sep=""),
+         x='Recall',
+         y='Precision')
+  ggsave(filename=paste(saveDir,'/',str_remove(allLabels[i],' '),'_PR_conf.png',sep=""))
+  
+  # ROC curve vs conf
+  ggplot(metMat,aes(label=Thresh))+
+    geom_point(aes(x=FPR,y=R))+
+    geom_path(aes(x=FPR,y=R))+
+    geom_text(aes(x=FPR,y=R),hjust = 0, nudge_x = 0.0005)+
+    coord_cartesian(xlim=c(0,1),ylim=c(0,1))+
+    labs(title=paste('ROC Curve, Min Overlap = ',minO*100,'%',sep=""),
+         x='FPR',
+         y='Recall')
+  ggsave(filename=paste(saveDir,'/',str_remove(allLabels[i],' '),'_ROC.png',sep=""))
+  
+  
+  # Plot precision vs thresh
+  ggplot(metMat)+
+    geom_point(aes(x=Thresh,y=P))+
+    geom_path(aes(x=Thresh,y=P))+
+    coord_cartesian(xlim=c(0,1),ylim=c(0,1))+
+    labs(title=paste('Min Overlap = ',minO*100,'%',sep=""),
+         x='Threshold',
+         y='Precision')
+  ggsave(filename=paste(saveDir,'/',str_remove(allLabels[i],' '),'_PvThresh.png',sep=""))
+  
+  # Plot recall vs thresh
+  ggplot(metMat)+
+    geom_point(aes(x=Thresh,y=R))+
+    geom_path(aes(x=Thresh,y=R))+
+    coord_cartesian(xlim=c(0,1),ylim=c(0,1))+
+    labs(title=paste('Min Overlap = ',minO*100,'%',sep=""),
+         x='Threshold',
+         y='Recall')
+  ggsave(filename=paste(saveDir,'/',str_remove(allLabels[i],' '),'_RvThresh.png',sep=""))
 }
 
-
-# Plot performance curves ---------------------
-# PR curve vs confidence score
-ggplot(metMat,aes(label=Thresh))+
-        geom_point(aes(x=R,y=P))+
-        geom_path(aes(x=R,y=P))+
-        geom_text(aes(x=R,y=P),hjust = 0, nudge_x = 0.0005)+
-        coord_cartesian(xlim=c(0,1),ylim=c(0,1))+
-        labs(title=paste('PR Curve, Min Overlap = ',minO*100,'%',sep=""),
-             x='Recall',
-             y='Precision')
-ggsave(filename=paste(saveDir,'/PR_conf.png',sep=""))
-
-# ROC curve vs conf
-ggplot(metMat,aes(label=Thresh))+
-        geom_point(aes(x=FPR,y=R))+
-        geom_path(aes(x=FPR,y=R))+
-        geom_text(aes(x=FPR,y=R),hjust = 0, nudge_x = 0.0005)+
-        coord_cartesian(xlim=c(0,1),ylim=c(0,1))+
-        labs(title=paste('ROC Curve, Min Overlap = ',minO*100,'%',sep=""),
-             x='FPR',
-             y='Recall')
-ggsave(filename=paste(saveDir,'/ROC.png',sep=""))
-
-
-# Plot precision vs thresh
-ggplot(metMat)+
-        geom_point(aes(x=Thresh,y=P))+
-        geom_path(aes(x=Thresh,y=P))+
-        coord_cartesian(xlim=c(0,1),ylim=c(0,1))+
-        labs(title=paste('Min Overlap = ',minO*100,'%',sep=""),
-             x='Threshold',
-             y='Precision')
-ggsave(filename=paste(saveDir,'/PvThresh.png',sep=""))
-
-# Plot recall vs thresh
-ggplot(metMat)+
-        geom_point(aes(x=Thresh,y=R))+
-        geom_path(aes(x=Thresh,y=R))+
-        coord_cartesian(xlim=c(0,1),ylim=c(0,1))+
-        labs(title=paste('Min Overlap = ',minO*100,'%',sep=""),
-             x='Threshold',
-             y='Recall')
-ggsave(filename=paste(saveDir,'/RvThresh.png',sep=""))
 
