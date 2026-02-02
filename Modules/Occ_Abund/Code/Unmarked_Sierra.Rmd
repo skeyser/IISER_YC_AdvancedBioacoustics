@@ -1,8 +1,11 @@
 ---
-title: "Fitting Occupancy Models using Unmarked"
-author: "Spencer R Keyser"
-affilitation: "K. Lisa Yang Center for Conservation Bioacoustics, Cornell Lab of Ornithology, Cornell University"
+title: "IISER Advanced Bioacoustics Workshop - Occupancy Modelling"
+author:
+  - name: "Spencer R. Keyser"
+    affiliation: "K. Lisa Yang Center for Conservation Bioacoustics, Cornell Lab of Ornithology, Cornell University"
 date: "2026-01-23"
+bibliography: "`r here::here('Modules', 'Occ_Abund', 'bib', 'Occ_Bib.bib')`"
+csl: "`r here::here('Modules', 'Occ_Abund', 'bib', 'ecology.csl')`"
 output: 
   html_document:
     code_folding: hide
@@ -30,7 +33,7 @@ First thing we want to do is load in our data from *Occ_Data_Prep.R*. The data s
 
 ```{r Data Loading}
 ## Set seed for consistency
-set.seed(212)
+set.seed(108)
 
 ## We saved the data as an RDS file type
 occ.dat <- readRDS(here("./Modules/Occ_Abund/Data/Occ_Data/UnmarkedData_SpeciesThresh_975minMaxPrex_NewVars.rds"))
@@ -44,9 +47,9 @@ head(occ.dat$y[1,,])
 ```
 
 We see that our detection/non-detection data `y` is a 3-dimensional array with 86 species, 1625 sites, and 5 sampling events. `str(occ.dat)` further shows the full object contains: 
-  1. `y`: Detection/non-detection data.
-  2. A list of two data frames for two survey-level covariates `eff.hrs` and `eff.jday` which are the sum of listening hours per unit per 6-day collapsed sampling period and the mean ordinal date of the 6-day period, respectively. 
-  3. A data frame of site-level covariates.
+1. `y`: Detection/non-detection data.
+1. A list of two data frames for two survey-level covariates `eff.hrs` and `eff.jday` which are the sum of listening hours per unit per 6-day collapsed sampling period and the mean ordinal date of the 6-day period, respectively. 
+1. A data frame of site-level covariates.
 
 The first thing we want to do is reorient the array of capture histories to move species to the third dimension (this is purely for convenience).
 ```{r Structuring Observations}
@@ -79,7 +82,7 @@ obsCovs <- lapply(obsCovs, FUN = function(x) x[subARU,])
 ## Confirm we have the right sites
 all(which(is.na(y[,,1])) == which(is.na(obsCovs$eff.hrs)))
 ```
-For the rest of the tutorial on we will be looking at occupancy patterns and responses for the Mountain quail (*Oreortyx pictus*)![Mountain quail. Photo Credits: Steve Rottenborn/Macaulay Library](`r here::here("./Modules/Occ_Abunds/Figs/Quail_Image.jpg")`). Mountain quail are a montane species native to western North America inhabiting shrub-dominated ecosystems that cover a broad range in elevation. Despite being ubiquitously distributed throughout nearly every major mountain range in the western US they are a secretive species. Bioacoustics is a great way to get better estimates of this species habitat associations, distribution, and population dynamics! (see Brunk et al., 2023)   
+For the rest of the tutorial on we will be looking at occupancy patterns and responses for the Mountain quail (*Oreortyx pictus*). Mountain quail are a montane species native to western North America inhabiting shrub-dominated ecosystems that cover a broad range of elevations. Despite being ubiquitously distributed throughout nearly every major mountain range in the western US they are a secretive species. Bioacoustics is a great way to get better estimates of this species habitat associations, distribution, and population dynamics (see @brunk_quail_2023)! <img src="`r here::here('Modules', 'Occ_Abund', 'Figs', 'Quail_Image.jpg')`" alt="Mountain quail" style="width:70%; float:center; margin-left:15px; margin-bottom:10px;">   
 ```{r Species selection}
 # Take one species since we are doing a single species model
 ## Let's focus on Hermit warbler
@@ -96,7 +99,7 @@ str(y)
 str(siteCovs)
 str(obsCovs)
 ```
-Next, we package the data up in the format that `unmarked` uses with the function `unmarkedFrameOccu`. It's worth noting that `unmarked` has a variety of `unmarkedFrame` objects with various extensions meant to package data for the model you expect to run! For example, later on we will see how to package data for a false-positive occupancy model using `unmarkedFrameOccuFP` and for a multi-species occupancy model with `unmarkedFrameOccuComm`.
+Next, we package the data up in the format that `unmarked` [@fiske_unmarked_2011; @kellner_unmarked_2023] uses with the function `unmarkedFrameOccu`. It's worth noting that `unmarked` has a variety of `unmarkedFrame` objects with various extensions meant to package data for the model you expect to run! For example, later on we will see how to package data for a false-positive occupancy model using `unmarkedFrameOccuFP` and for a multi-species occupancy model with `unmarkedFrameOccuComm`.
 ```{r Make unmarked frame}
 ## Package these elements into an unmarked object
 unmk <- unmarkedFrameOccu(y = y, siteCovs = siteCovs, obsCovs = obsCovs)
@@ -150,7 +153,8 @@ null.dat <- data.frame(DetProb = round(det.p, 2),
 
 ## Table
 knitr::kable(null.dat,
-             col.names = c("Detection Prob.", "Occupancy Prob."))
+             col.names = c("Detection Prob.", "Occupancy Prob."),
+             row.names = NA)
 
 ```
 For convenience, you can also use the predict function with `type = "state"` for occupancy and `type = "det"` for detection.
@@ -283,7 +287,7 @@ aictab(cand.set = list(fm1, fm2, fm3, fm4),
 ```
 
 ## Model Fit and Validation
-It's important to note that while AIC helps us decide between the "best" competing models it does not measure the adequacy of model fit. Testing for model fit is somewhat challenging for binary response models but we can use different tests with strengths and weaknesses to try to see how well our estimated parameters recover observed data. Below we assess model fit with two different techniques: A chi-squared discrepancy test and a MacKenzie-Bailey Goodness-of-fit test. Below, I am highlighting an example, but in reality we would want to run the parameteric bootstrap many more times (e.g., 1000, 2000, etc.).
+It's important to note that while AIC helps us decide between the "best" competing models it does not measure the adequacy of model fit. Testing for model fit is somewhat challenging for binary response models but we can use different tests with strengths and weaknesses to try to see how well our estimated parameters recover observed data. Below we assess model fit with two different techniques: A chi-squared discrepancy test and a MacKenzie-Bailey Goodness-of-fit test [@mackenzie_assessing_2004]. Below, I am highlighting an example, but in reality we would want to run the parameteric bootstrap many more times (e.g., 1000, 2000, etc.).
 ```{r Model Fit}
 ## To assess model fit we can use a Chi-square discrepancy test since our data is binary
 chisq <- function(fm){
@@ -349,7 +353,7 @@ suppressWarnings(plotEffects(fm4, "det", "eff.hrs"))
 plot.df <- plotEffectsData(fm4, "state", "topo_elev")
 
 ele.plot <- ggplot(data = plot.df, aes(x = covariateValue, y = Predicted)) + 
-  geom_line(size = 1, color = "red") +
+  geom_line(linewidth = 1, color = "red") +
   geom_line(aes(x = covariateValue, y = upper), linetype = "dashed", color = "black") +
   geom_line(aes(x = covariateValue, y = lower), linetype = "dashed", color = "black") +
   geom_ribbon(aes(ymax = upper, ymin = lower), fill = "gray", alpha = 0.5) + 
@@ -412,7 +416,7 @@ newdata <- data.frame(
   utmn.sc = mean(unmk2@siteCovs$utmn.sc, na.rm=TRUE),
   topo_elev.sc = ele_range,
   topo_elev2.sc = ele_range^2,
-  ch_cfo_mn.sc = mean(unmk@siteCovs$ch_cfo_mn.sc, na.rm=TRUE)
+  ch_cfo_mn.sc = mean(unmk2@siteCovs$ch_cfo_mn.sc, na.rm=TRUE)
   )
 
 ## Predict occupancy
@@ -446,7 +450,7 @@ ele.p1 | ele.p2 | ele.plot
 ```
 
 ## Adding Complexity: False-positive single-season, single-species (static) occupancy model
-Code below is for a false-positive flavor of occupancy model. Despite false-positive occupancy models being around for nearly 20 years they are still an active area of development. FP-models are also important for emerging bioacoustics pipelines with data derived from imperfect ML classifiers like (BirdNET) and detection thresholds. Given the rigidity of assumptions in standard occupancy models that there are zero FPs this extension is particularly relevant for all participants. However, these models are particularly tricky in lieu of extensive validation efforts and suffer from parameter identifiability issues. That is to say that it's impossible for us to distinguish between scenarios in which $p_{11}$ (species detection and occupancy) and $p_{10}$ (species detection but doesn't occupy; FP!) such that the model is multi-modal (Link and Royle, 2006). We can use some assumptions and numerical "tricks" to get the model to avoid sign switching but this is dependent on the species, acoustic quality, classifier performance, amount of validated data, and model structure. The models below correspond to a "Type 2" situation where we don't have explicitly validated data with the acoustic detections. "Type 3" can  improve parameter estimation and multi-modality by integrating "known" detections (e.g., expert listeners detect the species of interest). This data can then be integrated into the model as a multi-state model to help resolve the likelihood of an observation belonging to FP class vs TP class sensu Miller et al., (2013) and Clements et al, (2017). See Link and Royle (2006), Miller et al. (2013), Clement et al. (2017), and Rhinehart et al. (2023), Kery and Royle (2023; Chapter 7 Volume 2) for additional readings.
+Code below is for a false-positive flavor of occupancy model. Despite false-positive occupancy models being around for nearly 20 years they are still an active area of development. FP-models are also important for emerging bioacoustics pipelines with data derived from imperfect ML classifiers like (BirdNET) and detection thresholds. Given the rigidity of assumptions in standard occupancy models that there are zero FPs this extension is particularly relevant for all participants. However, these models are particularly tricky in lieu of extensive validation efforts and suffer from parameter identifiability issues. That is to say that it's impossible for us to distinguish between scenarios in which $p_{11}$ (species detection and occupancy) and $p_{10}$ (species detection but doesn't occupy; FP!) such that the model is multi-modal (Link and Royle, 2006). We can use some assumptions and numerical "tricks" to get the model to avoid sign switching but this is dependent on the species, acoustic quality, classifier performance, amount of validated data, and model structure. The models below correspond to a "Type 2" situation where we don't have explicitly validated data with the acoustic detections. "Type 3" can  improve parameter estimation and multi-modality by integrating "known" detections (e.g., expert listeners detect the species of interest). This data can then be integrated into the model as a multi-state model to help resolve the likelihood of an observation belonging to FP class vs TP class [@miller_improving_2011] and for bioacoustics specifically see @chambert_new_2018. See @royle_generalized_2006, @miller_improving_2011, @chambert_new_2018, and Rhinehart et al. (2023), Kery and Royle (2023; Chapter 7 Volume 2) for additional readings.
 
 ```{r FP-Model}
 
@@ -508,11 +512,11 @@ plotEffects(fm6, type = "fp", covariate = "rich")
 ```
 
 ## Adding Complexity: Multi-species, static occupancy model
-Multi-species occupancy models (MSOMs) are a great tool for estimating imperfect detection-corrected estimates of communities and for downstream biodiversity analyses (see Iknayan et al., 2017; Jarzyna et al., 2018). Below is the code and set up for an MSOM across five species (for simplicity) in the Sierra Nevada: [Acorn Woodpecker](https://birdsoftheworld.org/bow/species/acowoo/cur/introduction), [Hermit Warbler](https://birdsoftheworld.org/bow/species/herwar/cur/introduction), [Golden-crowned Kinglet](https://birdsoftheworld.org/bow/species/gockin/cur/introduction), [Lazuli Bunting](https://birdsoftheworld.org/bow/species/lazbun/cur/introduction), and [Olive-sided Flycatcher](https://birdsoftheworld.org/bow/species/olsfly/cur/introduction). It is feasible to run five separate occupancy models across this assemblage by looping over each species individually but running species in a MSOM framework provides some advantages:
+Multi-species occupancy models (MSOMs) are a great tool for estimating imperfect detection-corrected estimates of communities and for downstream biodiversity analyses (see @iknayan_detecting_2014; @jarzyna_detecting_2016). Below is the code and set up for an MSOM across five species (for simplicity) in the Sierra Nevada: [Acorn Woodpecker](https://birdsoftheworld.org/bow/species/acowoo/cur/introduction), [Hermit Warbler](https://birdsoftheworld.org/bow/species/herwar/cur/introduction), [Golden-crowned Kinglet](https://birdsoftheworld.org/bow/species/gockin/cur/introduction), [Lazuli Bunting](https://birdsoftheworld.org/bow/species/lazbun/cur/introduction), and [Olive-sided Flycatcher](https://birdsoftheworld.org/bow/species/olsfly/cur/introduction). It is feasible to run five separate occupancy models across this assemblage by looping over each species individually but running species in a MSOM framework provides some advantages:
 
 1. Improved coefficient precision for rare species from information borrowing
 2. Propagation of errors in community-level estimates
-3. Potential for data augmentation to estimate latent meta-community (species never detected; e.g., Dorazio et al., 2005; Zipkin et al., 2010)
+3. Potential for data augmentation to estimate latent meta-community (species never detected; e.g., @dorazio_estimating_2005; @zipkin_multi-species_2010)
 
 Expanding our formulas above from a single-species static occupancy model to a multi-species static occupancy model with covariates looks like such:
 $$
