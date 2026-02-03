@@ -1,0 +1,200 @@
+---
+title: "Distance Sampling"
+author: "Isha Bopardikar"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+##Set Working Directory
+setwd("C:\\Users\\ishab\\Desktop\\Workshop")
+rm(list=ls())
+```
+
+## This is our study area with the transect. The study design consisits of 13 line transects within a survey area of ~70sqkm.
+
+```{r, echo=FALSE, fig.align="center",out.width="40%"}
+knitr::include_graphics("C:\\Users\\ishab\\Desktop\\Workshop\\AreaMap.png")
+```
+#Load all libraries
+```{r, echo=FALSE, message= FALSE}
+library(ggplot2)
+library (rgdal)
+#if(!require(devtools)) install.packages("devtools")
+#devtools::install_github("kassambara/ggpubr")
+library(ggpubr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library (Distance)
+library(mrds)
+library (knitr)
+library(kableExtra)
+
+```
+
+```{r GetData, echo=FALSE, warning=FALSE, message=FALSE, results=FALSE}
+#Read in data. File for detection function is Distance.csv, on prompt open that. 
+FPorpoise <- read.csv(file.choose(), header = TRUE, stringsAsFactors = FALSE)
+```
+
+### This is a dataframe with transects conducted in an area of 70.9 sqkm, over 7 replicates. Sample label is the unique ID given to each line in the area. Each individual line length is given in the Effort.s column. Effort is then multiplied by number of replicates. The distance column has all the associated perpendicular distances (in meters) to the sightings. If a line has multiple individuals, each is represented by a separate row. Remember you also need the lines without any detections, do not eliminate those!
+
+### You can fit a detection function with just a column of distances. However, to have density and abundance estimates, you need columns for transect length (effort) and area for the study region.
+
+```{r,echo=TRUE}
+head(FPorpoise) #check column headers
+
+#Distance requires that the dataframe have the columns named in particular ways. If you havent done this in the csv files itself (this one is formatted), we can rename here.
+
+FPorpoise$Region.Label <-FPorpoise$Region.Label # Region identifier. We only have one region so this is consistent through the column. If you have blocks (strata) within your study area, then you need another strata column with area information of each strata. 
+FPorpoise$Area <- FPorpoise$Area #area in sqkm (here) of region
+FPorpoise$Effort <- FPorpoise$Effort #total effort for each line (eg if you went to a line 10 times, multiply that line length by 10)
+FPorpoise$distance <- FPorpoise$distance # distances in meters (or the metric you used)
+FPorpoise$object <- FPorpoise$Object #unique identifier for each localised porpoise. Some distance sampling calculations require this column. (eg dst)
+
+```
+### Check number of detections and distances
+```{r, echo=TRUE}
+sum(!is.na(FPorpoise$distance))
+```
+### Distribution of detection distances. Here you can note anything peculiar about the data being collected. Is there heaping at the first distance bins. Is there lack of detections near the first distance bins; this indicates some evasive movement, violating one (or two! remember perfect detections on the line!) assumption of distance sampling. These are best fix on-fiel during subsequent surveys. It is always good pratice to conduct a pilot and make a histogram of your detected distances to reduce any human error in measurements. 
+
+```{r basichist, fig.cap="Distribution of perpendicular acoustic distances for FP"}
+p1 <- hist(FPorpoise$distance, xlab = "Distance (m)", main= "Finless porpoise acoustic line transect") 
+
+```
+
+### Very important to tell distance your units of measurements or estimates can go wrong! Arguements for the convert_units function are as follows: 
++ `distance_units`: units of measure for perpendicular/radial distances
++ `effort_units`: units of measure for effort (NULL for point transects)
++ `area_units`: units of measure for the study area.
+
+```{r}
+conversion.factor <- convert_units(distance_units = "meter", effort_units = "kilometer", area_units = "square kilometer")
+```
+
+## Fit half-normal detection function
+Details about the arguments for this function:
++ `key="hn"`: half-normal (this is default)
++ `(key="hr")`: hazard-rate 
++ `(key="unif")`: uniform (rarely used)
+
+### The different options available for adjustment terms are:
++ `adjustment=NULL`: do not include adjustment terms
+ 
++`(adjustment="cos")`: cosine adjustment term (this is default)
++`(adjustment="herm")`: Hermite polynomial
++`(adjustment="poly")`: Simple polynomial 
++ `convert.units=conversion.factor`- this argument is extremely important since data are not always measured in the same units. In this dataset, the perpendicular distances are measured in meters and the line transect lengths are in kilometer; this argument converts the perpendicular distance measurements from meters to kilometer.
+
+```{r}
+set.seed(10)
+# A detection function with NO truncation (using the whole dataset, all distances)
+FP_HN <- ds(data = FPorpoise, key="hn", convert_units=conversion.factor, adjustment = NULL)
+summary(FP_HN)
+```
+
+### The summary gives information on the model that has been fit along with density and abundance estimates. Page wise
++ number of detections used in fitting the model
++ truncation distance
++ AIC score
++ parameters of the detection function (on a natural log scale)
++ estimated probability of detection (Pa)
++ estimated number of objects in the area covered by survey effort
++ summary of the survey (effort, number of transects, number of detections)
++ encounter rate and its variability
++ estimated abundance and density within the study area and measures of precision
++ if data have regional strata (or any other type of stratification), estimates are provided for each stratum
++ if objects were detected in groups, there are estimates of abundance of groups and of individuals
+
+### One thing to note, encounter rates are simply groups/individuals that were present. This is not densities. So poor visibility or poor encounter rates do not necessarily mean low densities. Similarly high sightings and large number of detections do not mean higher animal densities.
+
+```{r}
+#Plot the detection function
+plot(FP_HN)
+```
+
+### Check the goodness of fit for this model. The function used by default reports the goodness of fit assessed by the Cramer von-Mises (CvM) test along with a quantile-quantile plot showing locations of deviations from good fit. You can perform a goodness of fit test and a bootstrap version of the Kolomogorov-Smirnov goodness of fit test if needed. By default gof_ds conducts a CvM test. 
+
+```{r}
+#Check model fit with a few tests
+gof_ds(FP_HN)
+
+```
+
+### Similarly try to fit another type of detection function, the Hazard-rate and see what the population estimates look like.
+```{r}
+#Try fitting a hazard rate detection function and see if that works better for the dataset you have
+FP_HR <- ds(data = FPorpoise, key="hr", convert_units=conversion.factor, adjustment = NULL)
+summary(FP_HR)
+
+```
+
+### Remember the hazard-rate detection function. What can you tell about the shoulder on this detection function plot.
+```{r}
+#Plot the detection function
+plot(FP_HR)
+
+```
+
+### Is this model a good fit to the data
+```{r}
+#Check model fit with a few tests
+gof_ds(FP_HR)
+
+```
+### Remeber, if comparing between two models, we primarily rely on AIC, doesnt matter how well the data fit the model in their respective gof tests. Lets check whether the HN or HR fits the data better
+```{r}
+AIC(FP_HN, FP_HR)
+#almost same but HR is slightly better
+```
+## Truncation; for distance sampling, we ignore a small number of very distant detections — this is called truncation. The far-away sightings are rare and noisy, and don’t contribute much towards detectability close to the transect, which is the part of the curve we rely on most. Keeping these distances can pull the detection function into strange shapes and inflate uncertainty. Truncating the furthest few percent of detections, helps us better estimate how many animals we missed overall.
+### Remember truncation doesnt mean these animals dont exist, they are eventually accounted for by the detection function.Best practice is to run the data without truncation and see what the curve looks like. Ideally truncate the furthest 5 percent of detections for line transects, and sometimes up to 10 percent for point transects. Test what changes with a 5% truncation vs a 10%
+
+### DO NOT use AIC to compare truncated data with untruncated or truncations of different values with each other. AIC cannot be used if 
++ sample size n differs
++ truncation distance w differs
++ data are grouped, and cut points differ
++ data are grouped in one analysis and ungrouped in the other
+```{r}
+FP_HR_5truncated <- ds(data = FPorpoise, key="hr", truncation = "5%", convert_units=conversion.factor)
+summary(FP_HR_5truncated)
+
+```
+
+### Plot the truncated data, do you think that looks good. Would you truncate this further. Think about it.
+```{r}
+#Plot the detection function
+plot(FP_HR_5truncated)
+
+```
+
+### Is the truncated model fitting well
+```{r}
+#Check model fit with a few tests
+gof_ds(FP_HR_5truncated)
+
+```
+
+### Try the data with different functions and adjustement terms to see what happens.
+```{r}
+#Example for how to add in adjustment terms. Unless specified the default adjustment term added is cosine. If you dont specify the number of adjustment terms, distances chooses the best value (using AIC). If you want to force a particular number that needs to be specified `(order = XX)`. In the example below distances has chosen 2 adjustment terms.
+
+FP_HR_cos <- ds(data = FPorpoise, key="hr", truncation = "5%", adjustment = "cos", convert_units=conversion.factor)
+summary(FP_HR_cos)
+```
+
+### A note on model Coefficient of Variation (CV) and Confidence Intervals (CI). CV measures relative uncertainty. Gives information on how precise the estimate is, not whether it is correct or not. A general rule of thumb (for intuition):
++ CV < 20% → high precision
+
++ 20–30% → moderate precision
+
++ 30% → low precision (be careful using these estimates)
+
+### Ultimately two estimates can have the same density but very different CVs — the one with lower CV is more reliable. 
+
+### A confidence interval shows the range of values for the true density. A wide CI means more uncertainty, even if the point estimate looks reasonable. Narrow CIs mean the data strongly constrain the estimate. 
+### Point estimates tell you what the density might be; CV and CI tell you how much confidence you should place in it.
+
