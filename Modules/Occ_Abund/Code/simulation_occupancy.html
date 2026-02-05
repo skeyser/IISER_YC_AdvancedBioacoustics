@@ -401,7 +401,22 @@ for (i in 1:M) {
   umf1 &lt;- unmarkedFrameOccu(y = detection_history)
   # run ?occu() to read more about the function
   mod1 &lt;- occu(~1~1, umf1)
-  # check that occupancy and detection matches our inputs
+  mod1</code></pre>
+<pre><code>## 
+## Call:
+## occu(formula = ~1 ~ 1, data = umf1)
+## 
+## Occupancy (logit-scale):
+##  Estimate   SE     z P(&gt;|z|)
+##     0.218 0.29 0.752   0.452
+## 
+## Detection (logit-scale):
+##  Estimate    SE    z P(&gt;|z|)
+##    -0.294 0.226 -1.3   0.193
+## 
+## AIC: 314.9874 
+## Number of sites: 100</code></pre>
+<pre class="r"><code>  # check that occupancy and detection matches our inputs
   plogis(coef(mod1))</code></pre>
 <pre><code>##  psi(Int)    p(Int) 
 ## 0.5543023 0.4269633</code></pre>
@@ -454,7 +469,23 @@ for (i in 1:M) {
   # create unmarkedFrame
   umf2 &lt;- unmarkedFrameOccu(y = detection_history, data.frame(elev = elev))
   mod2 &lt;- occu(~1~elev, umf2)
-  # check that occupancy and detection matches our inputs
+  mod2</code></pre>
+<pre><code>## 
+## Call:
+## occu(formula = ~1 ~ elev, data = umf2)
+## 
+## Occupancy (logit-scale):
+##             Estimate    SE       z P(&gt;|z|)
+## (Intercept) -0.00901 0.271 -0.0333 0.97346
+## elev        -0.92859 0.312 -2.9765 0.00292
+## 
+## Detection (logit-scale):
+##  Estimate    SE      z P(&gt;|z|)
+##   -0.0263 0.216 -0.122   0.903
+## 
+## AIC: 298.2347 
+## Number of sites: 100</code></pre>
+<pre class="r"><code>  # check that occupancy and detection matches our inputs
   plogis(coef(mod2))</code></pre>
 <pre><code>##  psi(Int) psi(elev)    p(Int) 
 ## 0.4977476 0.2832103 0.4934257</code></pre>

@@ -12,7 +12,7 @@
 <meta name="author" content="Meghan A. Beatty" />
 
 
-<title>IISER Advanced Bioacoustics Workshop - Estimating abundance of unmarked animals from paired acoustic and count data</title>
+<title>IISER Advanced Bioacoustics Workshop - Abundance of unmarked animals from paired acoustic and count data</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -208,6 +208,96 @@ window.buildTabsets = function(tocID) {
 };
 
 </script>
+<script>
+window.initializeCodeFolding = function(show) {
+
+  // handlers for show-all and hide all
+  $("#rmd-show-all-code").click(function() {
+    $('div.r-code-collapse').each(function() {
+      $(this).collapse('show');
+    });
+  });
+  $("#rmd-hide-all-code").click(function() {
+    $('div.r-code-collapse').each(function() {
+      $(this).collapse('hide');
+    });
+  });
+
+  // index for unique code element ids
+  var currentIndex = 1;
+
+  // select all R code blocks
+  var rCodeBlocks = $('pre.r, pre.python, pre.bash, pre.sql, pre.cpp, pre.stan, pre.julia, pre.foldable');
+  rCodeBlocks.each(function() {
+    // skip if the block has fold-none class
+    if ($(this).hasClass('fold-none')) return;
+
+    // create a collapsable div to wrap the code in
+    var div = $('<div class="collapse r-code-collapse"></div>');
+    var showThis = (show || $(this).hasClass('fold-show')) && !$(this).hasClass('fold-hide');
+    var id = 'rcode-643E0F36' + currentIndex++;
+    div.attr('id', id);
+    $(this).before(div);
+    $(this).detach().appendTo(div);
+
+    // add a show code button right above
+    var showCodeText = $('<span>' + (showThis ? 'Hide' : 'Show') + '</span>');
+    var showCodeButton = $('<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm code-folding-btn pull-right float-right"></button>');
+    showCodeButton.append(showCodeText);
+    showCodeButton
+        .attr('data-toggle', 'collapse')
+        .attr('data-bs-toggle', 'collapse') // BS5
+        .attr('data-target', '#' + id)
+        .attr('data-bs-target', '#' + id)   // BS5
+        .attr('aria-expanded', showThis)
+        .attr('aria-controls', id);
+
+    var buttonRow = $('<div class="row"></div>');
+    var buttonCol = $('<div class="col-md-12"></div>');
+
+    buttonCol.append(showCodeButton);
+    buttonRow.append(buttonCol);
+
+    div.before(buttonRow);
+
+    // show the div if necessary
+    if (showThis) div.collapse('show');
+
+    // update state of button on show/hide
+    //   * Change text
+    //   * add a class for intermediate states styling
+    div.on('hide.bs.collapse', function () {
+      showCodeText.text('Show');
+      showCodeButton.addClass('btn-collapsing');
+    });
+    div.on('hidden.bs.collapse', function () {
+      showCodeButton.removeClass('btn-collapsing');
+    });
+    div.on('show.bs.collapse', function () {
+      showCodeText.text('Hide');
+      showCodeButton.addClass('btn-expanding');
+    });
+    div.on('shown.bs.collapse', function () {
+      showCodeButton.removeClass('btn-expanding');
+    });
+
+  });
+
+}
+</script>
+<script>
+window.initializeSourceEmbed = function(filename) {
+  $("#rmd-download-source").click(function() {
+    var src = $("#rmd-source-code").html();
+    var a = document.createElement('a');
+    a.href = "data:text/x-r-markdown;base64," + src;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+};
+</script>
 <style type="text/css">.hljs-literal {
 color: #990073;
 }
@@ -251,6 +341,11 @@ if (window.hljs) {
 
 
 
+<style type="text/css">
+#rmd-source-code {
+display: none;
+}
+</style>
 
 
 
@@ -331,6 +426,9 @@ display: none;
 </style>
 
 <!-- code folding -->
+<style type="text/css">
+.code-folding-btn { margin-bottom: 4px; }
+</style>
 
 
 
@@ -347,11 +445,20 @@ display: none;
 
 <div id="header">
 
+<div class="btn-group pull-right float-right">
+<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span>Code</span> <span class="caret"></span></button>
+<ul class="dropdown-menu dropdown-menu-right" style="min-width: 50px;">
+<li><a id="rmd-show-all-code" href="#">Show All Code</a></li>
+<li><a id="rmd-hide-all-code" href="#">Hide All Code</a></li>
+<li role="separator" class="divider"></li>
+<li><a id="rmd-download-source" href="#">Download Rmd</a></li>
+</ul>
+</div>
+
 
 
 <h1 class="title toc-ignore">IISER Advanced Bioacoustics Workshop -
-Estimating abundance of unmarked animals from paired acoustic and count
-data</h1>
+Abundance of unmarked animals from paired acoustic and count data</h1>
 <h4 class="author">Meghan A. Beatty</h4>
 <h4 class="date">February 2026</h4>
 
@@ -369,9 +476,9 @@ to estimate abundance. We have three goals:</p>
 per sampling occasion) from simulated acoustic data.</p></li>
 <li><p>Estimate abundance from simulated count data of unmarked animals
 using N-mixture models.</p></li>
-<li><p>Relate VAR to estimated species abundance to calculate an
-acoustically-derived index of abundance. We will also compare how this
-relationship compares to using raw count data.</p></li>
+<li><p>Relate VAR to estimated species abundance to estimate an
+acoustically-derived index of abundance. We will also relate VAR to raw
+count data for comparison.</p></li>
 </ol>
 </div>
 <div id="calculate-species-vocal-activity-rate" class="section level2">
@@ -388,11 +495,11 @@ occasion</p></li>
 <p>For simplicity, we will simulate detections per sampling occasion for
 an imaginary species. A sampling occasion could vary greatly depending
 on your species and study design. For example, if ARUs are paired with
-an avian point count study, you may calculate the number of songs
-detected within a 10-minute interval. If your ARU’s are paired with
-counts of elephants, it may be the number of bugles detected over the
-course of an hour. We make an assumption that if no individuals were
-present, no detections would be recorded (i.e., no false positives).</p>
+an avian point count study, you may count the number of songs detected
+within a 10-minute interval. If your ARU’s are paired with counts of
+elephants, it may be the number of bugles detected over the course of an
+hour. We make an assumption that if no individuals were present, no
+detections would be recorded (i.e., no false positives).</p>
 <pre class="r"><code>#set seed to ensure we get the same values
 set.seed(123)
 
@@ -401,7 +508,7 @@ means &lt;- rep(c(0,5,10,15,20),10)
 means</code></pre>
 <pre><code>##  [1]  0  5 10 15 20  0  5 10 15 20  0  5 10 15 20  0  5 10 15 20  0  5 10 15 20
 ## [26]  0  5 10 15 20  0  5 10 15 20  0  5 10 15 20  0  5 10 15 20  0  5 10 15 20</code></pre>
-<pre class="r"><code>#create a site by visit dataframe to fill with a detection history
+<pre class="r"><code>#create a site (rows) by visit (columns) dataframe to fill with a detection history
 VAR &lt;- matrix(NA, nrow = 50, ncol = 10)
 
 #simulate detections per sampling occasion based on the expected value assigned above
@@ -410,8 +517,15 @@ for (i in 1:nrow(VAR)) {
     VAR[i, ] &lt;- tmp[1:ncol(VAR)]
   }
 VAR &lt;- as.data.frame(VAR)
-
-#calculate mean detections per site
+head(VAR)</code></pre>
+<pre><code>##   V1 V2 V3 V4 V5 V6 V7 V8 V9 V10
+## 1  0  0  0  0  0  0  0  0  0   0
+## 2  4  7  4  8  9  2  5  8  5   5
+## 3 15 11  5  4 13 11 11 10  8  15
+## 4 16  7 11 10 13 10 12 14 10  10
+## 5 18 14 24 23 23 23 22 19 18  18
+## 6  0  0  0  0  0  0  0  0  0   0</code></pre>
+<pre class="r"><code>#calculate mean detections per site
 VAR.mean &lt;- rowMeans(VAR); VAR.mean</code></pre>
 <pre><code>##  [1]  0.0  5.7 10.3 11.3 20.2  0.0  5.5  9.8 13.9 18.9  0.0  4.5 10.7 16.0 21.4
 ## [16]  0.0  4.3 10.8 15.5 18.5  0.0  4.9 10.4 15.0 21.3  0.0  5.6  8.3 16.2 20.2
@@ -430,7 +544,7 @@ nOcc   &lt;- 10
 
 # define true abundance 
   # in this we case we assume the number of animals vary between 0 and 4 per site;
-  # thus, our simulated VAR data reflects that an animal calls 5x per sampling occasion (e.g., 4 animals x 5 calls = 20 calls total)
+  # thus, our simulated VAR data reflects that an animal calls about 5x per sampling occasion (e.g., 4 animals x 5 calls = 20 calls total)
 N &lt;- rep(c(0:4),10) 
 
 # define true detection
@@ -465,11 +579,11 @@ sites &lt;- paste0(&quot;site&quot;, 1:50)
 umf &lt;- unmarkedFramePCount(y = y, siteCovs = data.frame(sites=as.factor(sites)))
 
 #run the unmarked model
-model1 &lt;- pcount(~1 ~1, umf, K = 100)
+model1 &lt;- pcount(~1 ~1, umf, K = 25)
 model1</code></pre>
 <pre><code>## 
 ## Call:
-## pcount(formula = ~1 ~ 1, data = umf, K = 100)
+## pcount(formula = ~1 ~ 1, data = umf, K = 25)
 ## 
 ## Abundance (log-scale):
 ##  Estimate   SE    z  P(&gt;|z|)
@@ -554,9 +668,10 @@ pred$abund.est &lt;- round(pred$abund.est, 0)</code></pre>
 activity rate</h2>
 <p>We will fit generalized linear models with a Poisson distribution
 because we are using count data. However, other distributions may be
-needed depending on the behavior your data (e.g., a negative binomial or
-zero-inflated Poisson). We use estimated abundance and maximum observed
-counts as the response variables and VAR as the predictor.</p>
+needed depending on the behavior of your data (e.g., a negative binomial
+or zero-inflated Poisson; see lecture). We will test estimated abundance
+and maximum observed counts as the response variables and VAR as the
+predictor.</p>
 <pre class="r"><code>#add the maximum raw count per site (i.e., naive abundance) to the prediction dataframe
 pred$max.count &lt;- apply(y, 1, max)
 
@@ -661,6 +776,7 @@ observed counts? How does this change as we change our detection
 probability (p) defined above?</p>
 </div>
 
+<div id="rmd-source-code">LS0tDQp0aXRsZTogIklJU0VSIEFkdmFuY2VkIEJpb2Fjb3VzdGljcyBXb3Jrc2hvcCAtIEFidW5kYW5jZSBvZiB1bm1hcmtlZCBhbmltYWxzIGZyb20gcGFpcmVkIGFjb3VzdGljIGFuZCBjb3VudCBkYXRhIg0KYXV0aG9yOiAiTWVnaGFuIEEuIEJlYXR0eSINCmRhdGU6ICJGZWJydWFyeSAyMDI2Ig0Kb3V0cHV0OiANCiAgaHRtbF9kb2N1bWVudDoNCiAgICBjb2RlX2ZvbGRpbmc6IGhpZGUNCiAgICBjb2RlX2Rvd25sb2FkOiB0cnVlDQotLS0NCg0KYGBge3Igc2V0dXAsIGluY2x1ZGU9RkFMU0V9DQprbml0cjo6b3B0c19jaHVuayRzZXQoZWNobyA9IFRSVUUpDQpgYGANCg0KIyMgQ29kZSBwdXJwb3NlDQoNClRoZXJlIGFyZSBhIHZhcmlldHkgb2YgbWV0aG9kcyB0byBlc3RpbWF0ZSBhYnVuZGFuY2UgYW5kL29yIGRlbnNpdHkgZnJvbSBhY291c3RpYyBkYXRhLiBIZXJlLCB3ZSBhcmUgZ29pbmcgdG8gdXNlIGRhdGEgZnJvbSBzaW11bGF0ZWQsIHNwYXRpYWxseSByZXBsaWNhdGVkLCBwYWlyZWQgYWNvdXN0aWMgYW5kIGh1bWFuIG9ic2VydmVyIGNvdW50IHN1cnZleXMgdG8gZXN0aW1hdGUgYWJ1bmRhbmNlLiBXZSBoYXZlIHRocmVlIGdvYWxzOg0KDQoxLiAgQ2FsY3VsYXRlIHNwZWNpZXMgdm9jYWwgYWN0aXZpdHkgcmF0ZSAoVkFSKSAoZS5nLiwgXCMgZGV0ZWN0aW9ucyBwZXIgc2FtcGxpbmcgb2NjYXNpb24pIGZyb20gc2ltdWxhdGVkIGFjb3VzdGljIGRhdGEuDQoNCjIuICBFc3RpbWF0ZSBhYnVuZGFuY2UgZnJvbSBzaW11bGF0ZWQgY291bnQgZGF0YSBvZiB1bm1hcmtlZCBhbmltYWxzIHVzaW5nIE4tbWl4dHVyZSBtb2RlbHMuDQoNCjMuICBSZWxhdGUgVkFSIHRvIGVzdGltYXRlZCBzcGVjaWVzIGFidW5kYW5jZSB0byBlc3RpbWF0ZSBhbiBhY291c3RpY2FsbHktZGVyaXZlZCBpbmRleCBvZiBhYnVuZGFuY2UuIFdlIHdpbGwgYWxzbyByZWxhdGUgVkFSIHRvIHJhdyBjb3VudCBkYXRhIGZvciBjb21wYXJpc29uLg0KDQojIyAxKSBDYWxjdWxhdGUgc3BlY2llcyB2b2NhbCBhY3Rpdml0eSByYXRlDQoNCkluIGEgcmVhbC13b3JsZCB1c2UgY2FzZSwgd2Ugd291bGQgdXNlIHN1bW1hcml6ZWQgYWNvdXN0aWMgZGV0ZWN0aW9ucyAoZS5nLiwgZnJvbSBhIEJpcmRORVQgb3V0cHV0KSB0byBjYWxjdWxhdGUgZGlmZmVyZW50IG1lYXN1cmVzIG9mIFZBUi4gRXhhbXBsZSBtZWFzdXJlcyBvZiBWQVIgY291bGQgaW5jbHVkZSwgYnV0IGFyZSBub3QgbGltaXRlZCB0bzoNCg0KLSAgIFwjIGRldGVjdGlvbnMgcGVyIHNhbXBsaW5nIG9jY2FzaW9uDQoNCi0gICB0aW1lIHRvIGZpcnN0IHRvIGRldGVjdGlvbiBwZXIgc2FtcGxpbmcgb2NjYXNpb24NCg0KLSAgIHRpbWUgYmV0d2VlbiBmaXJzdCBhbmQgbGFzdCBkZXRlY3Rpb24gcGVyIHNhbXBsaW5nIG9jY2FzaW9uDQoNCkZvciBzaW1wbGljaXR5LCB3ZSB3aWxsIHNpbXVsYXRlIGRldGVjdGlvbnMgcGVyIHNhbXBsaW5nIG9jY2FzaW9uIGZvciBhbiBpbWFnaW5hcnkgc3BlY2llcy4gQSBzYW1wbGluZyBvY2Nhc2lvbiBjb3VsZCB2YXJ5IGdyZWF0bHkgZGVwZW5kaW5nIG9uIHlvdXIgc3BlY2llcyBhbmQgc3R1ZHkgZGVzaWduLiBGb3IgZXhhbXBsZSwgaWYgQVJVcyBhcmUgcGFpcmVkIHdpdGggYW4gYXZpYW4gcG9pbnQgY291bnQgc3R1ZHksIHlvdSBtYXkgY291bnQgdGhlIG51bWJlciBvZiBzb25ncyBkZXRlY3RlZCB3aXRoaW4gYSAxMC1taW51dGUgaW50ZXJ2YWwuIElmIHlvdXIgQVJVJ3MgYXJlIHBhaXJlZCB3aXRoIGNvdW50cyBvZiBlbGVwaGFudHMsIGl0IG1heSBiZSB0aGUgbnVtYmVyIG9mIGJ1Z2xlcyBkZXRlY3RlZCBvdmVyIHRoZSBjb3Vyc2Ugb2YgYW4gaG91ci4gV2UgbWFrZSBhbiBhc3N1bXB0aW9uIHRoYXQgaWYgbm8gaW5kaXZpZHVhbHMgd2VyZSBwcmVzZW50LCBubyBkZXRlY3Rpb25zIHdvdWxkIGJlIHJlY29yZGVkIChpLmUuLCBubyBmYWxzZSBwb3NpdGl2ZXMpLg0KDQpgYGB7ciBzaW11bGF0ZSBWQVJ9DQoNCiNzZXQgc2VlZCB0byBlbnN1cmUgd2UgZ2V0IHRoZSBzYW1lIHZhbHVlcw0Kc2V0LnNlZWQoMTIzKQ0KDQojZGVmaW5lIGV4cGVjdGVkIChtZWFuKSBudW1iZXIgb2YgYWNvdXN0aWMgZGV0ZWN0aW9ucyBwZXIgc2l0ZSBhbmQgc2FtcGxpbmcgb2NjYXNpb24gDQptZWFucyA8LSByZXAoYygwLDUsMTAsMTUsMjApLDEwKQ0KbWVhbnMNCg0KI2NyZWF0ZSBhIHNpdGUgKHJvd3MpIGJ5IHZpc2l0IChjb2x1bW5zKSBkYXRhZnJhbWUgdG8gZmlsbCB3aXRoIGEgZGV0ZWN0aW9uIGhpc3RvcnkNClZBUiA8LSBtYXRyaXgoTkEsIG5yb3cgPSA1MCwgbmNvbCA9IDEwKQ0KDQojc2ltdWxhdGUgZGV0ZWN0aW9ucyBwZXIgc2FtcGxpbmcgb2NjYXNpb24gYmFzZWQgb24gdGhlIGV4cGVjdGVkIHZhbHVlIGFzc2lnbmVkIGFib3ZlDQpmb3IgKGkgaW4gMTpucm93KFZBUikpIHsNCiAgICB0bXAgPC0gcnBvaXMobmNvbChWQVIpLCBsYW1iZGEgPSBtZWFuc1tpXSkNCiAgICBWQVJbaSwgXSA8LSB0bXBbMTpuY29sKFZBUildDQogIH0NClZBUiA8LSBhcy5kYXRhLmZyYW1lKFZBUikNCmhlYWQoVkFSKQ0KDQojY2FsY3VsYXRlIG1lYW4gZGV0ZWN0aW9ucyBwZXIgc2l0ZQ0KVkFSLm1lYW4gPC0gcm93TWVhbnMoVkFSKTsgVkFSLm1lYW4NCg0KYGBgDQoNCiMjIDIpIEVzdGltYXRlIGFidW5kYW5jZSB1c2luZyBjb3VudCBkYXRhIGFuZCBOLW1peHR1cmUgbW9kZWxzDQoNCkluIGEgcmVhbC13b3JsZCB1c2UgY2FzZSwgd2Ugd291bGQgdXNlIGRhdGEgY29sbGVjdGVkIGluIGh1bWFuIG9ic2VydmVyIGNvdW50IHN1cnZleXMgdGhhdCB3ZXJlIHBhaXJlZCB3aXRoIEFSVXMuIEhlcmUsIHdlIHdpbGwgc2ltdWxhdGUgY291bnQgZGF0YSB0aGF0IG1lZXRzIG91ciBleHBlY3RhdGlvbiB0aGF0IFZBUiBpbmNyZWFzZXMgd2l0aCBpbmNyZWFzaW5nIGFidW5kYW5jZS4NCg0KYGBge3Igc2ltdWxhdGUgY291bnRzfQ0KDQojZGVmaW5lIG51bWJlciBvZiBzaXRlcyBhbmQgbnVtYmVyIG9mIHNhbXBsaW5nIG9jY2FzaW9ucyB0byBtYXRjaCB0aGUgVkFSIGRhdGENCm5TaXRlcyA8LSA1MA0Kbk9jYyAgIDwtIDEwDQoNCiMgZGVmaW5lIHRydWUgYWJ1bmRhbmNlIA0KICAjIGluIHRoaXMgd2UgY2FzZSB3ZSBhc3N1bWUgdGhlIG51bWJlciBvZiBhbmltYWxzIHZhcnkgYmV0d2VlbiAwIGFuZCA0IHBlciBzaXRlOw0KICAjIHRodXMsIG91ciBzaW11bGF0ZWQgVkFSIGRhdGEgcmVmbGVjdHMgdGhhdCBhbiBhbmltYWwgY2FsbHMgYWJvdXQgNXggcGVyIHNhbXBsaW5nIG9jY2FzaW9uIChlLmcuLCA0IGFuaW1hbHMgeCA1IGNhbGxzID0gMjAgY2FsbHMgdG90YWwpDQpOIDwtIHJlcChjKDA6NCksMTApIA0KDQojIGRlZmluZSB0cnVlIGRldGVjdGlvbg0KcCA8LSAwLjMgICAgICAgICAgICAgICAgDQoNCiNjcmVhdGUgZGF0YWZyYW1lIGZvciBvYnNlcnZlZCBjb3VudHMNCnkgPC0gbWF0cml4KE5BLCBuU2l0ZXMsIG5PY2MpIA0KDQojc2ltdWxhdGUgb2JzZXJ2ZWQgY291bnRzIHdpdGggaW1wZXJmZWN0IGRldGVjdGlvbg0KZm9yKGkgaW4gMTpuU2l0ZXMpew0KICB5W2ksIF0gPC0gcmJpbm9tKG5PY2MsIE5baV0sIHApIA0KfQ0KDQpoZWFkKHkpDQoNCmBgYA0KDQpOZXh0IHdlIHdpbGwgdGFrZSBvdXIgc2ltdWxhdGVkIG9ic2VydmVkIGNvdW50cyBhbmQgZXN0aW1hdGUgYWJ1bmRhbmNlIGF0IGVhY2ggc2l0ZSB1c2luZyBhbiBOLW1peHR1cmUgbW9kZWwgaW4gdGhlICd1bm1hcmtlZCcgcGFja2FnZSwgaW5jb3Jwb3JhdGluZyBpbXBlcmZlY3QgZGV0ZWN0aW9uIG9mIGluZGl2aWR1YWxzIGF0IGVhY2ggc2l0ZS4NCg0KYGBge3IgZXN0aW1hdGUgYWJ1bmRhbmNlfQ0KDQpsaWJyYXJ5KHVubWFya2VkKQ0KDQojZGVmaW5lIHNpdGUgbmFtZXMNCnNpdGVzIDwtIHBhc3RlMCgic2l0ZSIsIDE6NTApDQoNCiNjcmVhdGUgdGhlIHVubWFya2VkIG9iamVjdA0KdW1mIDwtIHVubWFya2VkRnJhbWVQQ291bnQoeSA9IHksIHNpdGVDb3ZzID0gZGF0YS5mcmFtZShzaXRlcz1hcy5mYWN0b3Ioc2l0ZXMpKSkNCg0KI3J1biB0aGUgdW5tYXJrZWQgbW9kZWwNCm1vZGVsMSA8LSBwY291bnQofjEgfjEsIHVtZiwgSyA9IDI1KQ0KbW9kZWwxDQoNCiNjaGVjayB3ZSBhcmUgY2xvc2UgdG8gb3VyIGRlZmluZWQgJ3AnDQpwbG9naXMoY29lZihtb2RlbDEsIHR5cGU9ImRldCIpKSANCg0KI2VtcGlyaWNhbCBCYXllcyBlc3RpbWF0aW9uIG9mIHJhbmRvbSBlZmZlY3RzDQptb2RlbDFyZSA8LSByYW5lZihtb2RlbDEpOyBtb2RlbDFyZQ0KI2V4dHJhY3QgdGhlIG1lYW4gZXN0aW1hdGVkIGFidW5kYW5jZSBwZXIgc2l0ZQ0KcHJlZCA8LSBkYXRhLmZyYW1lKGFidW5kLmVzdCA9IGJ1cChtb2RlbDFyZSwgc3RhdGUgPSAibWVhbiIpKSANCiNlc3RpbWF0ZWQgc3VtbWVkIGFidW5kYW5jZSBhY3Jvc3Mgc2l0ZXMNCnN1bShidXAobW9kZWwxcmUpKSAgICANCiNhY3R1YWwgc3VtbWVkIGFidW5kYW5jZSBhY3Jvc3Mgc2l0ZXMNCnN1bShOKSAgICAgICAgICAgICAgICAgICAgIA0KDQojcm91bmQgZXN0aW1hdGVkIGFidW5kYW5jZSB0byBpbnRlZ2VyIGZvciB1c2UgYmVsb3cNCnByZWQkYWJ1bmQuZXN0IDwtIHJvdW5kKHByZWQkYWJ1bmQuZXN0LCAwKQ0KDQoNCmBgYA0KDQojIyAzKSBSZWxhdGUgZXN0aW1hdGVkIHNwZWNpZXMgYWJ1bmRhbmNlIGFuZCByYXcgY291bnQgZGF0YSB0byB2b2NhbCBhY3Rpdml0eSByYXRlDQoNCldlIHdpbGwgZml0IGdlbmVyYWxpemVkIGxpbmVhciBtb2RlbHMgd2l0aCBhIFBvaXNzb24gZGlzdHJpYnV0aW9uIGJlY2F1c2Ugd2UgYXJlIHVzaW5nIGNvdW50IGRhdGEuIEhvd2V2ZXIsIG90aGVyIGRpc3RyaWJ1dGlvbnMgbWF5IGJlIG5lZWRlZCBkZXBlbmRpbmcgb24gdGhlIGJlaGF2aW9yIG9mIHlvdXIgZGF0YSAoZS5nLiwgYSBuZWdhdGl2ZSBiaW5vbWlhbCBvciB6ZXJvLWluZmxhdGVkIFBvaXNzb247IHNlZSBsZWN0dXJlKS4gV2Ugd2lsbCB0ZXN0IGVzdGltYXRlZCBhYnVuZGFuY2UgYW5kIG1heGltdW0gb2JzZXJ2ZWQgY291bnRzIGFzIHRoZSByZXNwb25zZSB2YXJpYWJsZXMgYW5kIFZBUiBhcyB0aGUgcHJlZGljdG9yLg0KDQpgYGB7ciBnbG19DQoNCiNhZGQgdGhlIG1heGltdW0gcmF3IGNvdW50IHBlciBzaXRlIChpLmUuLCBuYWl2ZSBhYnVuZGFuY2UpIHRvIHRoZSBwcmVkaWN0aW9uIGRhdGFmcmFtZQ0KcHJlZCRtYXguY291bnQgPC0gYXBwbHkoeSwgMSwgbWF4KQ0KDQojYWRkIG1lYW4gVkFSIHBlciBzaXRlIHRvIHRoZSBwcmVkaWN0aW9uIGRhdGFmcmFtZQ0KcHJlZCRWQVIgPC0gVkFSLm1lYW4NCg0KI2xvb2sgYXQgY29ycmVsYXRpb25zIGJldHdlZW4gY291bnRzIGFuZCBWQVINCmNvcihwcmVkWywgYygiVkFSIiwgImFidW5kLmVzdCIsICJtYXguY291bnQiKV0pDQoNCiNyZWxhdGUgZXN0aW1hdGVkIGFidW5kYW5jZSB0byBWQVIgDQptLmFidW5kIDwtIGdsbShhYnVuZC5lc3QgfiBWQVIsIGZhbWlseSA9IHBvaXNzb24sIGRhdGEgPSBwcmVkKQ0Kc3VtbWFyeShtLmFidW5kKQ0KDQojcmVsYXRlIG1heGltdW0gb2JzZXJ2ZWQgY291bnQgdG8gVkFSIA0KbS5jb3VudCA8LSBnbG0obWF4LmNvdW50IH4gVkFSLCBmYW1pbHkgPSBwb2lzc29uLCBkYXRhID0gcHJlZCkNCnN1bW1hcnkobS5jb3VudCkNCg0KYGBgDQoNCkxldCdzIGNvbXBhcmUgdGhlIHJlc3VsdHMgb24gYSBwbG90Lg0KDQpgYGB7ciBwbG90fQ0KDQojY3JlYXRlIGRhdGEgZm9yIHByZWRpY3Rpb25zDQpuZXdkYXRhIDwtIGFzLmRhdGEuZnJhbWUocHJlZCkNCg0KI3ByZWRpY3QgYWJ1bmRhbmNlDQphYnVuZC5wcmVkIDwtIHByZWRpY3QobS5hYnVuZCwgbmV3ZGF0YSA9IG5ld2RhdGEsIHR5cGUgPSAicmVzcG9uc2UiLCBzZS5maXQgPSBUUlVFKQ0KIyA5NSUgQ0kNCmFidW5kLnByZWQgPC0gZGF0YS5mcmFtZSgNCiAgZml0ICAgPSBhYnVuZC5wcmVkJGZpdCwNCiAgc2UgICAgPSBhYnVuZC5wcmVkJHNlLmZpdCwNCiAgbG93ZXIgPSBhYnVuZC5wcmVkJGZpdCAtIDEuOTYgKiBhYnVuZC5wcmVkJHNlLmZpdCwNCiAgdXBwZXIgPSBhYnVuZC5wcmVkJGZpdCArIDEuOTYgKiBhYnVuZC5wcmVkJHNlLmZpdA0KICApDQojZm9ybWF0IGRhdGEgZm9yIHBsb3R0aW5nDQphYnVuZC5wcmVkJHR5cGUgPC0gImFidW5kIg0KYWJ1bmQucHJlZCRhYnVuZCA8LSBODQphYnVuZC5wcmVkJFZBUiA8LSBuZXdkYXRhJFZBUg0KDQojcHJlZGljdCBvYnNlcnZlZCBjb3VudHMNCmNvdW50LnByZWQgPC0gcHJlZGljdChtLmNvdW50LCBuZXdkYXRhID0gbmV3ZGF0YSwgdHlwZSA9ICJyZXNwb25zZSIsIHNlLmZpdCA9IFRSVUUpDQojIDk1JSBDSQ0KY291bnQucHJlZCA8LSBkYXRhLmZyYW1lKA0KICBmaXQgICA9IGNvdW50LnByZWQkZml0LA0KICBzZSAgICA9IGNvdW50LnByZWQkc2UuZml0LA0KICBsb3dlciA9IGNvdW50LnByZWQkZml0IC0gMS45NiAqIGNvdW50LnByZWQkc2UuZml0LA0KICB1cHBlciA9IGNvdW50LnByZWQkZml0ICsgMS45NiAqIGNvdW50LnByZWQkc2UuZml0DQogICkNCiNmb3JtYXQgZGF0YSBmb3IgcGxvdHRpbmcNCmNvdW50LnByZWQkdHlwZSA8LSAiY291bnQiDQpjb3VudC5wcmVkJGFidW5kIDwtIE4NCmNvdW50LnByZWQkVkFSIDwtIG5ld2RhdGEkVkFSDQoNCiNjb21iaW5lIGRhdGFmcmFtZXMgZm9yIHBsb3R0aW5nDQpwbG90IDwtIHJiaW5kKGFidW5kLnByZWQsIGNvdW50LnByZWQpDQoNCiNwbG90IHJlc3VsdHMNCmxpYnJhcnkoZ2dwbG90MikNCmdncGxvdChwbG90KSArDQogIGdlb21fbGluZShhZXMoeCA9IFZBUiwgeSA9IGZpdCwgY29sb3IgPSB0eXBlKSkgICsgDQogIGdlb21fcG9pbnQoYWVzKHggPSBWQVIsIHkgPSBhYnVuZCkpICsNCiAgZ2VvbV9yaWJib24oYWVzKHggPSBWQVIsIHltaW4gPSBsb3dlciwgeW1heCA9IHVwcGVyLCBmaWxsID0gdHlwZSksIGFscGhhID0gMC4xKSArDQogICNmYWNldF93cmFwKH50eXBlKSArICN0byBtYWtlIGVhY2ggcGxvdCBpbiBpdCdzIG93biBwYW5lDQogIHlsYWIoImFidW5kYW5jZSIpICsgeGxhYigidm9jYWwgYWN0aXZpdHkgcmF0ZSIpICsNCiAgdGhlbWVfY2xhc3NpYygpDQoNCg0KYGBgDQoNCldhcyBWQVIgYSBiZXR0ZXIgcHJlZGljdG9yIGZvciBlc3RpbWF0ZWQgYWJ1bmRhbmNlIG9yIHRoZSBtYXhpbXVtIG9ic2VydmVkIGNvdW50cz8gSG93IGRvZXMgdGhpcyBjaGFuZ2UgYXMgd2UgY2hhbmdlIG91ciBkZXRlY3Rpb24gcHJvYmFiaWxpdHkgKHApIGRlZmluZWQgYWJvdmU/DQo=</div>
 
 
 
@@ -694,6 +810,12 @@ $(document).ready(function () {
 </script>
 
 <!-- code folding -->
+<script>
+$(document).ready(function () {
+  window.initializeSourceEmbed("abundance_nmixture.Rmd");
+  window.initializeCodeFolding("hide" === "show");
+});
+</script>
 
 
 <!-- dynamically load mathjax for compatibility with self-contained -->
