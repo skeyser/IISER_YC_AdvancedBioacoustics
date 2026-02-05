@@ -1,7 +1,10 @@
 ---
-title: "BirdNET thresholding for detection data"
-output: html_document
+title: "IISER Advanced Bioacoustics Workshop - BirdNET thresholding for detection data"
 date: "February 2026"
+output: 
+  html_document:
+    code_folding: hide
+    code_download: true
 ---
 
 ```{r setup, include=FALSE}
@@ -179,9 +182,13 @@ summary
 
 ```
 
-From this we can see that, for this validation dataset, all thresholds resulted in equal precision: no false positives were included. In terms of recall, there was greater variability. With a 99% threshold, 31% of true positives would be removed. That may not be a big deal if detections are common, but it is worth considering in your choice of threshold.
+From this we can see that, for this validation dataset, all thresholds resulted in equal precision: no false positives were included. However, it is important to consider that when applied to the full dataset false positives will likely be present.
 
-You might also want to check how different thresholds affect the number of sites that have detections or not. Ideally, the thresholds will produce the same number of sites where an animal was detected at least once.
+In terms of recall, there was greater variability. With a 99% threshold, 31% of true positives would be removed. That may not be a big deal if detections are common, but it is worth considering in your choice of threshold.
+
+You may want to check how different thresholds affect the number of sites that have detections or not (i.e., naive occupancy). Ideally, the thresholds will produce the same number of sites where an animal was detected at least once. It can be a good check to see if, at a given threshold, a species is detected in sites where you can be reasonably confident it should NOT be (i.e., you may be including too many false positives).
+
+It is an open area of research to determine exactly how to translate continuous detection scores into an occupancy framework. Occupancy can be very sensitive to false positives, but false negatives may be the bigger concern in other applications (e.g., when making environmental decisions that will result in land prioritization/protection).
 
 ## 5) Creating a detection history
 
@@ -306,4 +313,4 @@ for(s in 1:length(species.list)){
 output
 ```
 
-Even with 100+ species each with up to 200 validation examples, this loop can run quite quickly on a standard commericial-grade computer. Thus, you can readily adjust what is saved and what types of plots are generated. Sometimes it is useful to view the logistic plots for both confidence- and logit-score based models (and sometimes it isn’t - and for multi-species applications we generally suggest choosing one score type and sticking with it for simplicity). Viewing histograms of the distribution of prediction scores can also be useful early in the process to get a sense of the overall distribution of scores for any given species.
+Even with 100+ species each with up to 200 validation examples, this loop can run quite quickly on a standard commericial-grade computer. Thus, you can readily adjust what is saved and what types of plots are generated. Sometimes it is useful to view the logistic plots for both confidence- and logit-score based models (and sometimes it isn’t - for multi-species applications we generally suggest choosing one score type and sticking with it for simplicity). Viewing histograms of the distribution of prediction scores can also be useful early in the process to get a sense of the overall distribution of scores for any given species.
